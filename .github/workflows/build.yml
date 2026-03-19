@@ -64,12 +64,14 @@ jobs:
       - name: Build native libraries (libvpx + ffmpeg)
         run: |
           export ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/23.2.8568313
+          export IGNORE_SDK=1
           cd tgx
           chmod +x scripts/*.sh scripts/private/*.sh
-          bash scripts/private/patch-opus-impl.sh
-          bash scripts/private/patch-androidx-media-impl.sh
-          bash scripts/private/build-vpx-impl.sh
-          bash scripts/private/build-ffmpeg-impl.sh
+          source scripts/set-env.sh
+          patch-opus-impl.sh
+          patch-androidx-media-impl.sh
+          build-vpx-impl.sh
+          build-ffmpeg-impl.sh
 
       - name: Fix gradlew
         run: |
