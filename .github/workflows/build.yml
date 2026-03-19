@@ -61,6 +61,16 @@ jobs:
           tgx.extension=none
           PROPS
 
+      - name: Build native libraries (libvpx + ffmpeg)
+        run: |
+          export ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/23.2.8568313
+          cd tgx
+          chmod +x scripts/*.sh scripts/private/*.sh
+          bash scripts/private/patch-opus-impl.sh
+          bash scripts/private/patch-androidx-media-impl.sh
+          bash scripts/private/build-vpx-impl.sh
+          bash scripts/private/build-ffmpeg-impl.sh
+
       - name: Fix gradlew
         run: |
           cd tgx
