@@ -79,6 +79,15 @@ jobs:
           export -f validate_file validate_dir
           bash scripts/private/patch-opus-impl.sh
           bash scripts/private/patch-androidx-media-impl.sh
+          # Patch build scripts to only build legacy/armeabi-v7a (saves 80% build time)
+          sed -i 's/for ABI in arm64-v8a armeabi-v7a x86_64 x86/for ABI in armeabi-v7a/' \
+            scripts/private/build-vpx-impl.sh
+          sed -i 's/for FLAVOR in latest lollipop legacy/for FLAVOR in legacy/' \
+            scripts/private/build-vpx-impl.sh
+          sed -i 's/for ABI in arm64-v8a armeabi-v7a x86_64 x86/for ABI in armeabi-v7a/' \
+            scripts/private/build-ffmpeg-impl.sh
+          sed -i 's/for FLAVOR in latest lollipop legacy/for FLAVOR in legacy/' \
+            scripts/private/build-ffmpeg-impl.sh
           bash scripts/private/build-vpx-impl.sh
           bash scripts/private/build-ffmpeg-impl.sh
 
@@ -91,7 +100,7 @@ jobs:
       - name: Build APK
         run: |
           cd tgx
-          ./gradlew assembleLollipopX64Debug --stacktrace
+          ./gradlew assembleLegacyArm32Debug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
