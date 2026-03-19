@@ -17,10 +17,8 @@ jobs:
 
       - name: Clone original Telegram-X with all submodules
         run: |
-          git clone --recurse-submodules --shallow-submodules \
+          git clone --recurse-submodules \
             https://github.com/TGX-Android/Telegram-X.git tgx
-          cd tgx
-          git submodule update --init --recursive --depth 1
 
       - name: Apply our modifications
         run: |
