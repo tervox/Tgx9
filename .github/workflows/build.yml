@@ -64,14 +64,24 @@ jobs:
       - name: Build native libraries (libvpx + ffmpeg)
         run: |
           export ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/23.2.8568313
-          export IGNORE_SDK=1
           cd tgx
           chmod +x scripts/*.sh scripts/private/*.sh
-          source scripts/set-env.sh
-          patch-opus-impl.sh
-          patch-androidx-media-impl.sh
-          build-vpx-impl.sh
-          build-ffmpeg-impl.sh
+          export THIRDPARTY_LIBRARIES="$(pwd)/app/jni/third_party"
+          export BUILD_PLATFORM="linux-x86_64"
+          export CPU_COUNT=$(nproc)
+          export SED="sed"
+          export PATH="$ANDROID_SDK_ROOT/cmake/3.22.1/bin:$(pwd)/scripts:$(pwd)/scripts/private:$PATH"
+          export STYLE_END="" STYLE_ERROR="" STYLE_WARN="" STYLE_INFO=""
+
+          # Define validate functions needed by build scripts
+          validate_file() { test -f "$1" || (echo "File not found: $1" && false); }
+          validate_dir()  { test -d "$1" || (echo "Directory not found: $1" && false); }
+          export -f validate_file validate_dir
+
+          bash scripts/private/patch-opus-impl.sh
+          bash scripts/private/patch-androidx-media-impl.sh
+          bash scripts/private/build-vpx-impl.sh
+          bash scripts/private/build-ffmpeg-impl.sh
 
       - name: Fix gradlew
         run: |
