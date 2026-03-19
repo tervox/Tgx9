@@ -1,0 +1,81 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Tgx9 (our modifications)
+        uses: actions/checkout@v4
+        with:
+          path: tgx9-mods
+
+      - name: Clone original Telegram-X with all submodules
+        run: |
+          git clone --recurse-submodules --shallow-submodules \
+            https://github.com/TGX-Android/Telegram-X.git tgx
+          cd tgx
+          git submodule update --init --recursive --depth 1
+
+      - name: Apply our modifications
+        run: |
+          cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomGalleryController.java \
+             tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
+          cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java \
+             tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
+          # Add btn_showInFiles ID
+          sed -i 's|<item type="id" name="btn_showAdvanced" />|<item type="id" name="btn_showAdvanced" />\n  <item type="id" name="btn_showInFiles" />|' \
+            tgx/app/src/main/res/values/ids.xml
+          # Add OpenSystemFilePicker string
+          sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="OpenSystemFilePicker">Open file picker</string>|' \
+            tgx/app/src/main/res/values/strings.xml
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;23.2.8568313" \
+            "cmake;3.22.1" || true
+
+      - name: Create local.properties
+        run: |
+          cat > tgx/local.properties << PROPS
+          sdk.dir=$ANDROID_SDK_ROOT
+          telegram.api_id=2040
+          telegram.api_hash=b18441a1ff607e10a989891a5462e627
+          app.id=org.thunderdog.challegram
+          app.name=Telegram X
+          app.download_url=https://t.me/tgx_android
+          app.disable_signing=true
+          tgx.extension=none
+          PROPS
+
+      - name: Fix gradlew
+        run: |
+          cd tgx
+          chmod +x gradlew
+          sed -i 's/\r$//' gradlew
+
+      - name: Build APK
+        run: |
+          cd tgx
+          ./gradlew assembleLegacyUniversalDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tgx9-debug
+          path: tgx/app/build/outputs/apk/**/*.apk
