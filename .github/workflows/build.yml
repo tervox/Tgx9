@@ -47,6 +47,20 @@ jobs:
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "ndk;23.2.8568313" \
             "cmake;3.22.1" || true
+          # Install NDK sources needed for cpu-features.h
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "ndk-bundle" || true
+          # Copy cpu-features.h if not in expected location
+          NDK_DIR="$ANDROID_SDK_ROOT/ndk/23.2.8568313"
+          CPU_DIR="$NDK_DIR/sources/android/cpufeatures"
+          mkdir -p "$CPU_DIR"
+          if [ ! -f "$CPU_DIR/cpu-features.h" ]; then
+            # Download from NDK GitHub
+            curl -sL "https://raw.githubusercontent.com/android/ndk/master/sources/android/cpufeatures/cpu-features.h" \
+              -o "$CPU_DIR/cpu-features.h" || true
+            curl -sL "https://raw.githubusercontent.com/android/ndk/master/sources/android/cpufeatures/cpu-features.c" \
+              -o "$CPU_DIR/cpu-features.c" || true
+          fi
 
       - name: Create local.properties
         run: |
@@ -88,12 +102,9 @@ jobs:
             scripts/private/build-ffmpeg-impl.sh
           sed -i 's/for FLAVOR in latest lollipop legacy/for FLAVOR in legacy/' \
             scripts/private/build-ffmpeg-impl.sh
-          # Fix CPUFEATURES_DIR - move it after ANDROID_NDK_VERSION is set per-ABI
-          sed -i '/CPUFEATURES_DIR=.*cpufeatures/d' scripts/private/build-vpx-impl.sh
-          sed -i '/ANDROID_NDK_VERSION=\$ANDROID_NDK_VERSION_LEGACY.*armeabi/a\    CPUFEATURES_DIR="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION/sources/android/cpufeatures"' \
-            scripts/private/build-vpx-impl.sh || true
-          # Simpler fix: just hardcode CPUFEATURES_DIR
-          sed -i "s|CPUFEATURES_DIR=.*|CPUFEATURES_DIR=\"$ANDROID_SDK_ROOT/ndk/23.2.8568313/sources/android/cpufeatures\"|g" \
+          # Fix CPUFEATURES_DIR - hardcode the path
+          NDK_CPUFEATURES="$ANDROID_SDK_ROOT/ndk/23.2.8568313/sources/android/cpufeatures"
+          sed -i "s|CPUFEATURES_DIR=.*|CPUFEATURES_DIR=\"${NDK_CPUFEATURES}\"|" \
             scripts/private/build-vpx-impl.sh
           bash scripts/private/build-vpx-impl.sh
           bash scripts/private/build-ffmpeg-impl.sh
