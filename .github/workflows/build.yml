@@ -93,22 +93,9 @@ jobs:
           export -f validate_file validate_dir
           bash scripts/private/patch-opus-impl.sh
           bash scripts/private/patch-androidx-media-impl.sh
-          # Only build legacy/armeabi-v7a
-          sed -i 's/for ABI in arm64-v8a armeabi-v7a x86_64 x86/for ABI in armeabi-v7a/' \
-            scripts/private/build-vpx-impl.sh
-          sed -i 's/for FLAVOR in latest lollipop legacy/for FLAVOR in legacy/' \
-            scripts/private/build-vpx-impl.sh
-          # For ffmpeg: keep only lines 217-265 (armeabi-v7a section), comment out rest
-          # Lines 143-216 = arm64, 176-216 = lollipop/legacy arm64
-          # Lines 266-314 = x86
-          sed -i '143,216s/^/# SKIP /' scripts/private/build-ffmpeg-impl.sh
-          sed -i '266,314s/^/# SKIP /' scripts/private/build-ffmpeg-impl.sh
-          # Also in armeabi-v7a: only keep legacy (lines ~254-265), skip latest(244) and lollipop(254)
-          # Actually keep all armeabi-v7a since we need legacy specifically
-          # Fix CPUFEATURES_DIR
-          NDK_CPUFEATURES="$ANDROID_SDK_ROOT/ndk/23.2.8568313/sources/android/cpufeatures"
-          sed -i "s|CPUFEATURES_DIR=.*|CPUFEATURES_DIR=\"${NDK_CPUFEATURES}\"|" \
-            scripts/private/build-vpx-impl.sh
+          # Use custom script that only builds legacy/armeabi-v7a
+          chmod +x ../tgx9-mods/build_native.sh
+          bash ../tgx9-mods/build_native.sh
           bash scripts/private/build-vpx-impl.sh
           bash scripts/private/build-ffmpeg-impl.sh
 
