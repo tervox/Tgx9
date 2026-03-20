@@ -36,6 +36,14 @@ jobs:
           # tgvoip is a subdirectory, so use ../tgcalls to go up to the parent build dir
           sed -i '2a set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/../tgcalls)' \
             tgx/app/jni/tgvoip/CMakeLists.txt
+          # Upload notification: add string resource
+          sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="UploadProgressNotificationChannel">Upload em andamento</string>|' \
+            tgx/app/src/main/res/values/strings.xml
+          # Upload notification: copy new Java file
+          cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/telegram/UploadNotificationManager.java \
+            tgx/app/src/main/java/org/thunderdog/challegram/telegram/
+          # Upload notification: hook into Tdlib.updateFile()
+          python3 tgx9-mods/patch_tdlib.py
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
