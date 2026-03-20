@@ -54,6 +54,8 @@ public class UploadNotificationManager {
     if (nm == null) return;
 
     if (isDone && !isUploading) {
+      // Só processa se estava sendo rastreado (upload iniciado pela sessão atual)
+      if (activeFiles.get(file.id) == null) return;
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
 
