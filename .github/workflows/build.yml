@@ -65,21 +65,26 @@ jobs:
       - name: Create local.properties
         run: |
           cat > tgx/local.properties << PROPS
-          sdk.dir=$ANDROID_SDK_ROOT
-          telegram.api_id=2040
-          telegram.api_hash=b18441a1ff607e10a989891a5462e627
-          app.id=org.thunderdog.challegram
-          app.name=Telegram X
-          app.download_url=https://t.me/tgx_android
-          app.disable_signing=true
-          tgx.extension=none
-          PROPS
+sdk.dir=$ANDROID_SDK_ROOT
+telegram.api_id=2040
+telegram.api_hash=b18441a1ff607e10a989891a5462e627
+app.id=org.thunderdog.challegram
+app.name=Telegram X
+app.download_url=https://t.me/tgx_android
+app.disable_signing=true
+tgx.extension=none
+PROPS
+
+      - name: Install build dependencies
+        run: sudo apt-get install -y yasm nasm pkg-config
 
       - name: Build native libraries (libvpx + ffmpeg)
         run: |
           cd tgx
           chmod +x scripts/*.sh scripts/private/*.sh
-          export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+          export THIRDPARTY_LIBRARIES="$(pwd)/app/jni/third_party"
+          export SED="sed"
+          export STYLE_END="" STYLE_ERROR="" STYLE_WARN="" STYLE_INFO=""
           bash scripts/private/patch-opus-impl.sh
           bash scripts/private/patch-androidx-media-impl.sh
           chmod +x ../tgx9-mods/build_native.sh
