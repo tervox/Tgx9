@@ -21,10 +21,8 @@ import org.thunderdog.challegram.tool.UI;
 public class UploadNotificationManager {
 
   private static final String CHANNEL_ID = "upload_progress";
-  private static final int BASE_NOTIFICATION_ID = 55000;
-  // Throttle: só atualiza notificação a cada 1 segundo por arquivo
+  private static final int NOTIF_ID = 55000; // ID único fixo
   private static final long UPDATE_INTERVAL_MS = 1000;
-  // Auto-remove notificação de conclusão após 3 segundos
   private static final long DONE_DISMISS_MS = 3000;
 
   private static UploadNotificationManager instance;
@@ -36,10 +34,11 @@ public class UploadNotificationManager {
     return instance;
   }
 
-  private final SparseArray<Integer> fileIdToNotifId = new SparseArray<>();
+  // Todos os arquivos ativos no momento
+  private final SparseArray<TdApi.File> activeFiles = new SparseArray<>();
   private final SparseLongArray lastUpdateTime = new SparseLongArray();
   private final Handler handler = new Handler(Looper.getMainLooper());
-  private int nextNotifId = BASE_NOTIFICATION_ID;
+  private Runnable dismissRunnable;
 
   public void onFileUpdate (TdApi.UpdateFile update) {
     TdApi.File file = update.file;
@@ -54,82 +53,102 @@ public class UploadNotificationManager {
     NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
     if (nm == null) return;
 
-    String channelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
-
     if (isDone && !isUploading) {
-      // Mostra notificação de conclusão
-      Integer notifId = fileIdToNotifId.get(file.id);
-      if (notifId != null) {
-        String fileName = getFileName(file);
-        Intent openIntent = new Intent(ctx, MainActivity.class);
-        openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-          ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-          : PendingIntent.FLAG_UPDATE_CURRENT;
-        PendingIntent pi = PendingIntent.getActivity(ctx, notifId, openIntent, piFlags);
+      activeFiles.remove(file.id);
+      lastUpdateTime.delete(file.id);
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, channelId)
-          .setSmallIcon(android.R.drawable.stat_sys_upload_done)
-          .setContentTitle("Envio concluído")
-          .setContentText(fileName + " enviado com sucesso")
-          .setProgress(0, 0, false)
-          .setOngoing(false)
-          .setAutoCancel(true)
-          .setContentIntent(pi)
-          .setPriority(NotificationCompat.PRIORITY_LOW);
-
-        nm.notify(notifId, builder.build());
-
-        // Remove a notificação de conclusão após 3 segundos
-        final int finalNotifId = notifId;
-        handler.postDelayed(() -> nm.cancel(finalNotifId), DONE_DISMISS_MS);
-
-        fileIdToNotifId.remove(file.id);
-        lastUpdateTime.delete(file.id);
+      if (activeFiles.size() == 0) {
+        // Todos terminaram — mostra "Concluído" e some em 3s
+        showDoneNotification(ctx, nm);
+      } else {
+        // Ainda tem arquivos ativos — atualiza com o próximo
+        showProgressNotification(ctx, nm);
       }
       return;
     }
 
-    // Throttle: não atualiza se passou menos de 1 segundo
+    // Arquivo ativo
+    activeFiles.put(file.id, file);
+
+    // Throttle
     long now = System.currentTimeMillis();
     long last = lastUpdateTime.get(file.id, 0L);
-    if (now - last < UPDATE_INTERVAL_MS && fileIdToNotifId.get(file.id) != null) {
-      return;
-    }
+    if (now - last < UPDATE_INTERVAL_MS) return;
     lastUpdateTime.put(file.id, now);
 
-    int notifId;
-    Integer existing = fileIdToNotifId.get(file.id);
-    if (existing != null) {
-      notifId = existing;
-    } else {
-      notifId = nextNotifId++;
-      fileIdToNotifId.put(file.id, notifId);
+    // Cancela dismiss pendente se um novo upload começou
+    if (dismissRunnable != null) {
+      handler.removeCallbacks(dismissRunnable);
+      dismissRunnable = null;
     }
 
-    long total = file.size;
-    long uploaded = file.remote.uploadedSize;
-    int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
-    String fileName = getFileName(file);
+    showProgressNotification(ctx, nm);
+  }
 
+  private void showProgressNotification (Context ctx, NotificationManager nm) {
+    if (activeFiles.size() == 0) return;
+
+    // Pega o arquivo com upload mais avançado (currentFile)
+    TdApi.File currentFile = null;
+    for (int i = 0; i < activeFiles.size(); i++) {
+      TdApi.File f = activeFiles.valueAt(i);
+      if (currentFile == null || f.remote.uploadedSize > currentFile.remote.uploadedSize) {
+        currentFile = f;
+      }
+    }
+    if (currentFile == null) return;
+
+    int total_files = activeFiles.size();
+    long total = currentFile.size;
+    long uploaded = currentFile.remote.uploadedSize;
+    int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
+    String fileName = getFileName(currentFile);
+
+    String title = total_files > 1
+      ? "Enviando " + total_files + " arquivo(s)"
+      : "Enviando " + fileName;
+    String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
+
+    nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
+      android.R.drawable.stat_sys_upload, true, 100, progress, false));
+  }
+
+  private void showDoneNotification (Context ctx, NotificationManager nm) {
+    nm.notify(NOTIF_ID, buildNotif(ctx, "Envio concluído",
+      "Todos os arquivos foram enviados",
+      android.R.drawable.stat_sys_upload_done, false, 0, 0, false));
+
+    dismissRunnable = () -> {
+      nm.cancel(NOTIF_ID);
+      dismissRunnable = null;
+    };
+    handler.postDelayed(dismissRunnable, DONE_DISMISS_MS);
+  }
+
+  private android.app.Notification buildNotif (Context ctx, String title, String text,
+      int icon, boolean ongoing, int progressMax, int progress, boolean indeterminate) {
+    String channelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
     Intent openIntent = new Intent(ctx, MainActivity.class);
     openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
     int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
       ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
       : PendingIntent.FLAG_UPDATE_CURRENT;
-    PendingIntent pi = PendingIntent.getActivity(ctx, notifId, openIntent, piFlags);
+    PendingIntent pi = PendingIntent.getActivity(ctx, 0, openIntent, piFlags);
 
     NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, channelId)
-      .setSmallIcon(android.R.drawable.stat_sys_upload)
-      .setContentTitle("Enviando " + fileName)
-      .setContentText(progress + "% — " + formatSize(uploaded) + " / " + formatSize(total))
-      .setProgress(100, progress, false)  // false = sem animação infinita
-      .setOngoing(true)
+      .setSmallIcon(icon)
+      .setContentTitle(title)
+      .setContentText(text)
+      .setOngoing(ongoing)
       .setOnlyAlertOnce(true)
+      .setAutoCancel(!ongoing)
       .setContentIntent(pi)
       .setPriority(NotificationCompat.PRIORITY_LOW);
 
-    nm.notify(notifId, builder.build());
+    if (progressMax > 0) {
+      builder.setProgress(progressMax, progress, indeterminate);
+    }
+    return builder.build();
   }
 
   private static String getFileName (TdApi.File file) {
