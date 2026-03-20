@@ -44,6 +44,8 @@ jobs:
             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
           # Upload notification: hook into Tdlib.updateFile()
           python3 tgx9-mods/patch_tdlib.py
+          # Rate limiting: delay between sends + flood wait retry
+          python3 tgx9-mods/patch_messages.py
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
