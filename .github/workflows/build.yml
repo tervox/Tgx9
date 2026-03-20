@@ -27,10 +27,10 @@ jobs:
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java \
              tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
           # Add btn_showInFiles ID
-          sed -i 's|<item type="id" name="btn_showAdvanced" />|<item type="id" name="btn_showAdvanced" />\n  <item type="id" name="btn_showInFiles" />|' \
+          sed -i 's|<item type="id" name="btn_showAdvanced" />|<item type="id" name="btn_showAdvanced" />\n  <item type="id" name="btn_showInFiles" />\n  <item type="id" name="btn_sortByName" />\n  <item type="id" name="btn_sortDateDesc" />\n  <item type="id" name="btn_sortNameAsc" />\n  <item type="id" name="btn_sortNameDesc" />|' \
             tgx/app/src/main/res/values/ids.xml
           # Add OpenSystemFilePicker string
-          sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="OpenSystemFilePicker">Open file picker</string>|' \
+          sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="OpenSystemFilePicker">Open file picker</string>\n  <string name="SortBy">Ordenar por</string>\n  <string name="SortByName">Ordenar</string>\n  <string name="SortDateDesc">Data (mais recente)</string>\n  <string name="SortNameAsc">Nome (A-Z)</string>\n  <string name="SortNameDesc">Nome (Z-A)</string>|' \
             tgx/app/src/main/res/values/strings.xml
           # Fix tgcalls libs: set ARCHIVE_OUTPUT_DIRECTORY so lld can find them via --exclude-libs
           # tgvoip is a subdirectory, so use ../tgcalls to go up to the parent build dir

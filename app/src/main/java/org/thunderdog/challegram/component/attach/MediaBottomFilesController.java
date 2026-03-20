@@ -119,14 +119,55 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       strings.append(R.string.OpenSystemFilePicker);
       icons.append(R.drawable.baseline_folder_open_96);
 
+      ids.append(R.id.btn_sortByName);
+      strings.append(R.string.SortByName);
+      icons.append(R.drawable.baseline_sort_by_alpha_24);
+
       showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
         if (optionId == R.id.btn_selectAll) {
           selectAllFiles();
         } else if (optionId == R.id.btn_showInFiles) {
           showSystemPicker(false);
+        } else if (optionId == R.id.btn_sortByName) {
+          showSortOptions();
         }
         return true;
       });
+    }
+  }
+
+  // Ordenação: 0=data desc (padrão), 1=nome asc, 2=nome desc
+  private int sortMode = 0;
+
+  private void showSortOptions () {
+    int[] ids = new int[]{R.id.btn_sortDateDesc, R.id.btn_sortNameAsc, R.id.btn_sortNameDesc};
+    String[] strings = new String[]{
+      Lang.getString(R.string.SortDateDesc),
+      Lang.getString(R.string.SortNameAsc),
+      Lang.getString(R.string.SortNameDesc)
+    };
+    int[] icons = new int[]{
+      R.drawable.baseline_access_time_24,
+      R.drawable.baseline_sort_by_alpha_24,
+      R.drawable.baseline_sort_by_alpha_24
+    };
+    showOptions(Lang.getString(R.string.SortBy), ids, strings, null, icons, (v, optionId) -> {
+      if (optionId == R.id.btn_sortDateDesc) {
+        sortMode = 0;
+      } else if (optionId == R.id.btn_sortNameAsc) {
+        sortMode = 1;
+      } else if (optionId == R.id.btn_sortNameDesc) {
+        sortMode = 2;
+      }
+      reloadCurrentFolder();
+      return true;
+    });
+  }
+
+  private void reloadCurrentFolder () {
+    if (!stack.isEmpty()) {
+      String path = stack.get(stack.size() - 1).path;
+      navigateToPath(null, path, getLastPath(2), true, null, null, null);
     }
   }
 
@@ -935,40 +976,33 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     final boolean d1 = o1.isDirectory();
     final boolean d2 = o2.isDirectory();
 
+    // Pastas sempre primeiro
     if (d1 != d2) {
       return d1 ? -1 : 1;
     }
 
     if (d1) {
-      return o1.compareTo(o2);
-    }
-
-    final long t1 = o1.lastModified();
-    final long t2 = o2.lastModified();
-    if (t1 > 0 && t2 > 0 && t1 != t2) {
-      return Long.compare(t2, t1);
+      return o1.getName().compareToIgnoreCase(o2.getName());
     }
 
     final String n1 = o1.getName();
     final String n2 = o2.getName();
 
-    String e1 = U.getExtension(n1);
-    String e2 = U.getExtension(n2);
-
-    if (e1 == null && e2 == null) {
-      return n1.compareTo(n2);
+    if (sortMode == 1) {
+      // Nome A→Z
+      return n1.compareToIgnoreCase(n2);
+    } else if (sortMode == 2) {
+      // Nome Z→A
+      return n2.compareToIgnoreCase(n1);
+    } else {
+      // Data mais recente primeiro (padrão)
+      final long t1 = o1.lastModified();
+      final long t2 = o2.lastModified();
+      if (t1 != t2) {
+        return Long.compare(t2, t1);
+      }
+      return n1.compareToIgnoreCase(n2);
     }
-    if (e1 == null) {
-      return -1; // files without extension are higher
-    }
-    if (e2 == null) {
-      return 1;
-    }
-
-    e1 = e1.toLowerCase();
-    e2 = e2.toLowerCase();
-
-    return e1.equals(e2) ? n1.compareTo(n2) : e1.compareTo(e2);
   }
 
   private void init () {
