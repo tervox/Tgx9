@@ -33,8 +33,8 @@ jobs:
           sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="OpenSystemFilePicker">Open file picker</string>|' \
             tgx/app/src/main/res/values/strings.xml
           # Fix tgcalls libs: set ARCHIVE_OUTPUT_DIRECTORY so lld can find them via --exclude-libs
-          # Insert at line 2 of tgvoip/CMakeLists.txt (after cmake_minimum_required)
-          sed -i '2a set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY tgcalls)' \
+          # tgvoip is a subdirectory, so use ../tgcalls to go up to the parent build dir
+          sed -i '2a set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/../tgcalls)' \
             tgx/app/jni/tgvoip/CMakeLists.txt
 
       - name: Set up JDK 21
