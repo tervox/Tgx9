@@ -117,7 +117,8 @@ export PKG_CONFIG_LIBDIR="$LIBVPX_LIB/pkgconfig"
   --extra-cflags="-fvisibility=hidden -ffunction-sections -fdata-sections -Os -DCONFIG_LINUX_PERF=0 -DANDROID -marm -march=armv7-a -mfloat-abi=softfp -I$LIBVPX_INCLUDE --static -fPIC" \
   --extra-ldflags="-L$LIBVPX_LIB -L$LINK -L${LIBS_DIR} -lvpx -Wl,-Bsymbolic -Wl,--fix-cortex-a8 -nostdlib -lc -lm -ldl -fPIC" \
   --extra-libs="-lunwind -lclang_rt.builtins-arm-android" \
-  --enable-neon --disable-x86asm
+  --enable-neon --disable-x86asm \
+  --disable-zlib
 
 make -j"$CPU_COUNT"
 make install
