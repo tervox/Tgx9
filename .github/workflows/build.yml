@@ -64,16 +64,14 @@ jobs:
 
       - name: Create local.properties
         run: |
-          cat > tgx/local.properties << PROPS
-sdk.dir=$ANDROID_SDK_ROOT
-telegram.api_id=2040
-telegram.api_hash=b18441a1ff607e10a989891a5462e627
-app.id=org.thunderdog.challegram
-app.name=Telegram X
-app.download_url=https://t.me/tgx_android
-app.disable_signing=true
-tgx.extension=none
-PROPS
+          printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > tgx/local.properties
+          printf 'telegram.api_id=2040\n' >> tgx/local.properties
+          printf 'telegram.api_hash=b18441a1ff607e10a989891a5462e627\n' >> tgx/local.properties
+          printf 'app.id=org.thunderdog.challegram\n' >> tgx/local.properties
+          printf 'app.name=Telegram X\n' >> tgx/local.properties
+          printf 'app.download_url=https://t.me/tgx_android\n' >> tgx/local.properties
+          printf 'app.disable_signing=true\n' >> tgx/local.properties
+          printf 'tgx.extension=none\n' >> tgx/local.properties
 
       - name: Install build dependencies
         run: sudo apt-get install -y yasm nasm pkg-config
