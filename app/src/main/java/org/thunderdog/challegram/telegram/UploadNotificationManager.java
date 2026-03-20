@@ -65,8 +65,8 @@ public class UploadNotificationManager {
       fileIdToNotifId.put(file.id, notifId);
     }
 
-    int total = file.size;
-    int uploaded = (int) file.remote.uploadedSize;
+    long total = file.size;
+    long uploaded = file.remote.uploadedSize;
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
     String fileName = file.local.path;
