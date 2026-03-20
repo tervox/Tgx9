@@ -32,6 +32,13 @@ jobs:
           # Add OpenSystemFilePicker string
           sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="OpenSystemFilePicker">Open file picker</string>|' \
             tgx/app/src/main/res/values/strings.xml
+          # Fix tgcalls libs: set ARCHIVE_OUTPUT_DIRECTORY so lld can find them
+          for lib in usrsctp srtp openh264 absl tgcalls webrtc rnnoise tgvoip json11; do
+            cmake_file=$(grep -rl "add_library($lib STATIC" tgx/app/jni/tgvoip/)
+            if [ -n "$cmake_file" ]; then
+              sed -i "s|add_library($lib STATIC|set_target_properties($lib PROPERTIES ARCHIVE_OUTPUT_DIRECTORY tgcalls)\nadd_library($lib STATIC|" "$cmake_file"
+            fi
+          done
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
