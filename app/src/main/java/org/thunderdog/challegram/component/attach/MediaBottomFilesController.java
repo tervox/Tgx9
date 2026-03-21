@@ -167,7 +167,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private void reloadCurrentFolder () {
     if (!stack.isEmpty()) {
       String path = stack.get(stack.size() - 1).path;
-      navigateToPath(null, path, getLastPath(2), false, null, null, null);
+      navigateToPath(null, KEY_FOLDER + path, getLastPath(2), false, null, null, null);
     }
   }
 
