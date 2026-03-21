@@ -46,14 +46,21 @@ for id_name in new_ids:
 open(ids_path, 'w').write(content_ids)
 
 # ── Fix missing drawable in MediaBottomFilesController.java ──────────────────
+# baseline_sort_by_alpha_24 and baseline_filter_list_24 don't exist in TGX
+# Use baseline_settings_24 which is confirmed to exist in this file
 java_path = 'tgx/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java'
 java_content = open(java_path).read()
 
-if 'baseline_sort_by_alpha_24' in java_content:
-    java_content = java_content.replace('baseline_sort_by_alpha_24', 'baseline_filter_list_24')
+replaced = False
+for bad_drawable in ['baseline_sort_by_alpha_24', 'baseline_filter_list_24']:
+    if bad_drawable in java_content:
+        java_content = java_content.replace(bad_drawable, 'baseline_settings_24')
+        replaced = True
+        print(f'OK: replaced {bad_drawable} with baseline_settings_24')
+
+if replaced:
     open(java_path, 'w').write(java_content)
-    print('OK: replaced baseline_sort_by_alpha_24 with baseline_filter_list_24')
 else:
-    print('SKIP: baseline_sort_by_alpha_24 not found')
+    print('SKIP: no bad drawables found')
 
 print('patch_files.py done!')
