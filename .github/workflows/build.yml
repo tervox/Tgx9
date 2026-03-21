@@ -26,23 +26,14 @@ jobs:
              tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java \
              tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
-          # Add btn_showInFiles ID
-          sed -i 's|<item type="id" name="btn_showAdvanced" />|<item type="id" name="btn_showAdvanced" />\n  <item type="id" name="btn_showInFiles" />\n  <item type="id" name="btn_sortByName" />\n  <item type="id" name="btn_sortDateDesc" />\n  <item type="id" name="btn_sortNameAsc" />\n  <item type="id" name="btn_sortNameDesc" />|' \
-            tgx/app/src/main/res/values/ids.xml
-          # Add OpenSystemFilePicker string
-          sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="OpenSystemFilePicker">Open file picker</string>\n  <string name="SortBy">Ordenar por</string>\n  <string name="SortByName">Ordenar</string>\n  <string name="SortDateDesc">Data (mais recente)</string>\n  <string name="SortNameAsc">Nome (A-Z)</string>\n  <string name="SortNameDesc">Nome (Z-A)</string>|' \
-            tgx/app/src/main/res/values/strings.xml
-          # Fix tgcalls libs: set ARCHIVE_OUTPUT_DIRECTORY so lld can find them via --exclude-libs
-          # tgvoip is a subdirectory, so use ../tgcalls to go up to the parent build dir
-          sed -i '2a set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/../tgcalls)' \
-            tgx/app/jni/tgvoip/CMakeLists.txt
-          # Upload notification: add string resource
-          sed -i 's|<string name="NoFilePicker">.*</string>|&\n  <string name="UploadProgressNotificationChannel">Upload em andamento</string>|' \
-            tgx/app/src/main/res/values/strings.xml
-          # Upload notification: copy new Java file
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/telegram/UploadNotificationManager.java \
             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
-          # Upload notification: hook into Tdlib.updateFile()
+          # Fix tgcalls libs
+          sed -i '2a set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/../tgcalls)' \
+            tgx/app/jni/tgvoip/CMakeLists.txt
+          # Add strings and IDs via Python (reliable, no sed anchor issues)
+          python3 tgx9-mods/patch_files.py
+          # Upload notification hook
           python3 tgx9-mods/patch_tdlib.py
           # Rate limiting: delay between sends + flood wait retry
           python3 tgx9-mods/patch_messages.py
@@ -61,15 +52,12 @@ jobs:
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "ndk;23.2.8568313" \
             "cmake;3.22.1" || true
-          # Install NDK sources needed for cpu-features.h
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "ndk-bundle" || true
-          # Copy cpu-features.h if not in expected location
           NDK_DIR="$ANDROID_SDK_ROOT/ndk/23.2.8568313"
           CPU_DIR="$NDK_DIR/sources/android/cpufeatures"
           mkdir -p "$CPU_DIR"
           if [ ! -f "$CPU_DIR/cpu-features.h" ]; then
-            # Download from NDK GitHub
             curl -sL "https://raw.githubusercontent.com/android/ndk/master/sources/android/cpufeatures/cpu-features.h" \
               -o "$CPU_DIR/cpu-features.h" || true
             curl -sL "https://raw.githubusercontent.com/android/ndk/master/sources/android/cpufeatures/cpu-features.c" \
