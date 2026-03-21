@@ -17,7 +17,6 @@ new_strings = [
 
 for name, value in new_strings:
     if f'name="{name}"' not in content:
-        # Insert before </resources>
         content = content.replace('</resources>', f'  <string name="{name}">{value}</string>\n</resources>')
         print(f'OK: added string {name}')
     else:
@@ -45,4 +44,16 @@ for id_name in new_ids:
         print(f'SKIP: id {id_name} already exists')
 
 open(ids_path, 'w').write(content_ids)
+
+# ── Fix missing drawable in MediaBottomFilesController.java ──────────────────
+java_path = 'tgx/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java'
+java_content = open(java_path).read()
+
+if 'baseline_sort_by_alpha_24' in java_content:
+    java_content = java_content.replace('baseline_sort_by_alpha_24', 'baseline_filter_list_24')
+    open(java_path, 'w').write(java_content)
+    print('OK: replaced baseline_sort_by_alpha_24 with baseline_filter_list_24')
+else:
+    print('SKIP: baseline_sort_by_alpha_24 not found')
+
 print('patch_files.py done!')
