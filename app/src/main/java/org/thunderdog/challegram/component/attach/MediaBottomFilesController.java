@@ -121,7 +121,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
       ids.append(R.id.btn_sortByName);
       strings.append(R.string.SortByName);
-      icons.append(R.drawable.baseline_sort_by_alpha_24);
+      icons.append(R.drawable.baseline_settings_24);
 
       showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
         if (optionId == R.id.btn_selectAll) {
@@ -148,8 +148,8 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     };
     int[] icons = new int[]{
       R.drawable.baseline_access_time_24,
-      R.drawable.baseline_sort_by_alpha_24,
-      R.drawable.baseline_sort_by_alpha_24
+      R.drawable.baseline_settings_24,
+      R.drawable.baseline_settings_24
     };
     showOptions(Lang.getString(R.string.SortBy), ids, strings, null, icons, (v, optionId) -> {
       if (optionId == R.id.btn_sortDateDesc) {
