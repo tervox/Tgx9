@@ -125,7 +125,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
       ids.append(R.id.btn_refresh);
       strings.append(R.string.Refresh);
-      icons.append(R.drawable.baseline_refresh_24);
+      icons.append(R.drawable.baseline_file_download_24);
 
       ids.append(R.id.btn_toggleHidden);
       strings.append(showHiddenFiles ? R.string.HideHiddenFiles : R.string.ShowHiddenFiles);
