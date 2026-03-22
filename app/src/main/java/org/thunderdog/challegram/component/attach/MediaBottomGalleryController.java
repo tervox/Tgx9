@@ -149,11 +149,17 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
         strings.append(R.string.Gallery);
         icons.append(R.drawable.baseline_image_24);
 
+        ids.append(R.id.btn_refresh);
+        strings.append(R.string.Refresh);
+        icons.append(R.drawable.baseline_file_download_24);
+
         showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
           if (optionId == R.id.btn_selectAll) {
             selectAllInCurrentBucket();
           } else if (optionId == R.id.btn_showInFiles) {
             mediaLayout.openGallery(false);
+          } else if (optionId == R.id.btn_refresh) {
+            refreshGallery();
           }
           return true;
         });
@@ -161,6 +167,15 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
         mediaLayout.openGallery(false);
       }
     }
+  }
+
+  private void refreshGallery () {
+    galleryLoaded = false;
+    galleryLoading = false;
+    galleryShown = false;
+    gallery = null;
+    currentBucket = null;
+    loadGalleryPhotos(null);
   }
 
   private void selectAllInCurrentBucket () {
