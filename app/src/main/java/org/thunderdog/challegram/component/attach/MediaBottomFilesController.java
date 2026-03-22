@@ -1002,6 +1002,26 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   @Override
+  private int compareNatural (String a, String b) {
+    int i = 0, j = 0;
+    while (i < a.length() && j < b.length()) {
+      char ca = a.charAt(i), cb = b.charAt(j);
+      if (Character.isDigit(ca) && Character.isDigit(cb)) {
+        int start1 = i, start2 = j;
+        while (i < a.length() && Character.isDigit(a.charAt(i))) i++;
+        while (j < b.length() && Character.isDigit(b.charAt(j))) j++;
+        int n1 = Integer.parseInt(a.substring(start1, i));
+        int n2 = Integer.parseInt(b.substring(start2, j));
+        if (n1 != n2) return Integer.compare(n1, n2);
+      } else {
+        int cmp = Character.toLowerCase(ca) - Character.toLowerCase(cb);
+        if (cmp != 0) return cmp;
+        i++; j++;
+      }
+    }
+    return a.length() - b.length();
+  }
+
   public int compare (File o1, File o2) {
     final boolean d1 = o1.isDirectory();
     final boolean d2 = o2.isDirectory();
@@ -1012,18 +1032,18 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     }
 
     if (d1) {
-      return o1.getName().compareToIgnoreCase(o2.getName());
+      return compareNatural(o1.getName(), o2.getName());
     }
 
     final String n1 = o1.getName();
     final String n2 = o2.getName();
 
     if (sortMode == 1) {
-      // Nome A→Z
-      return n1.compareToIgnoreCase(n2);
+      // Nome A→Z natural
+      return compareNatural(n1, n2);
     } else if (sortMode == 2) {
-      // Nome Z→A
-      return n2.compareToIgnoreCase(n1);
+      // Nome Z→A natural
+      return compareNatural(n2, n1);
     } else {
       // Data mais recente primeiro (padrão)
       final long t1 = o1.lastModified();
@@ -1031,7 +1051,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       if (t1 != t2) {
         return Long.compare(t2, t1);
       }
-      return n1.compareToIgnoreCase(n2);
+      return compareNatural(n1, n2);
     }
   }
 
