@@ -182,10 +182,14 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       Object da = a.getData();
       Object db = b.getData();
       if (da instanceof InlineResultCommon && db instanceof InlineResultCommon) {
-        File fa = ((InlineResultCommon) da).getFile();
-        File fb = ((InlineResultCommon) db).getFile();
-        if (fa != null && fb != null) {
-          return compare(fa, fb);
+        String pa = ((InlineResultCommon) da).getId();
+        String pb = ((InlineResultCommon) db).getId();
+        if (pa != null && pb != null) {
+          File fa = new File(pa);
+          File fb = new File(pb);
+          if (fa.exists() && fb.exists()) {
+            return compare(fa, fb);
+          }
         }
       }
       return 0;
