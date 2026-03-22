@@ -1001,7 +1001,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     return path.startsWith(KEY_FOLDER) ? path.substring(KEY_FOLDER.length()) : path.startsWith(KEY_FILE) ? path.substring(KEY_FILE.length()) : path;
   }
 
-  @Override
   private int compareNatural (String a, String b) {
     int i = 0, j = 0;
     while (i < a.length() && j < b.length()) {
