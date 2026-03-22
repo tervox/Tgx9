@@ -162,8 +162,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         LoadOperation operation = buildFolder(folderPath, getLastPath(2));
         this.currentLoadOperation = operation;
         Background.instance().post(operation);
+        return;
       }
     }
+    // Tela principal - reconstrói
+    buildCells();
   }
 
   private void showSortOptions () {
