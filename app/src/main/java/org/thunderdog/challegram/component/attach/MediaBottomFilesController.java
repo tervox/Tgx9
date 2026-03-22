@@ -140,14 +140,18 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private int sortMode = 0;
 
   private void showSortOptions () {
-    int[] ids = new int[]{R.id.btn_sortDateDesc, R.id.btn_sortNameAsc, R.id.btn_sortNameDesc};
+    int[] ids = new int[]{R.id.btn_sortDateDesc, R.id.btn_sortNameAsc, R.id.btn_sortNameDesc, R.id.btn_sortTypeAsc, R.id.btn_sortTypeDesc};
     String[] strings = new String[]{
       Lang.getString(R.string.SortDateDesc),
       Lang.getString(R.string.SortNameAsc),
-      Lang.getString(R.string.SortNameDesc)
+      Lang.getString(R.string.SortNameDesc),
+      Lang.getString(R.string.SortTypeAsc),
+      Lang.getString(R.string.SortTypeDesc)
     };
     int[] icons = new int[]{
       R.drawable.baseline_access_time_24,
+      R.drawable.baseline_settings_24,
+      R.drawable.baseline_settings_24,
       R.drawable.baseline_settings_24,
       R.drawable.baseline_settings_24
     };
@@ -158,10 +162,33 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         sortMode = 1;
       } else if (optionId == R.id.btn_sortNameDesc) {
         sortMode = 2;
+      } else if (optionId == R.id.btn_sortTypeAsc) {
+        sortMode = 3;
+      } else if (optionId == R.id.btn_sortTypeDesc) {
+        sortMode = 4;
       }
       reloadCurrentFolder();
       return true;
     });
+  }
+
+  private int getFileGroup (File f) {
+    String name = f.getName().toLowerCase();
+    if (name.endsWith(".gif")) return 2;
+    if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".bmp") || name.endsWith(".heic")) return 0;
+    if (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".mov") || name.endsWith(".avi") || name.endsWith(".webm") || name.endsWith(".flv") || name.endsWith(".wmv") || name.endsWith(".m4v") || name.endsWith(".3gp")) return 1;
+    if (name.endsWith(".mp3") || name.endsWith(".m4a") || name.endsWith(".aac") || name.endsWith(".ogg") || name.endsWith(".wav") || name.endsWith(".flac")) return 3;
+    return 4;
+  }
+
+  private String getGroupTitle (int group) {
+    switch (group) {
+      case 0: return Lang.getString(R.string.SortGroupPhotos);
+      case 1: return Lang.getString(R.string.SortGroupVideos);
+      case 2: return Lang.getString(R.string.SortGroupGifs);
+      case 3: return Lang.getString(R.string.SortGroupAudio);
+      default: return Lang.getString(R.string.SortGroupOther);
+    }
   }
 
   private void reloadCurrentFolder () {
@@ -178,6 +205,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         files.add(item);
       }
     }
+
     java.util.Collections.sort(files, (a, b) -> {
       Object da = a.getData();
       Object db = b.getData();
@@ -194,10 +222,36 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       }
       return 0;
     });
+
     ArrayList<ListItem> result = new ArrayList<>();
     if (upper != null) result.add(upper);
     result.addAll(folders);
-    result.addAll(files);
+
+    if (sortMode == 3 || sortMode == 4) {
+      // Agrupa por tipo com títulos
+      java.util.LinkedHashMap<Integer, ArrayList<ListItem>> groups = new java.util.LinkedHashMap<>();
+      for (int g = 0; g <= 4; g++) groups.put(g, new ArrayList<>());
+      for (ListItem item : files) {
+        Object d = item.getData();
+        if (d instanceof InlineResultCommon) {
+          String p = ((InlineResultCommon) d).getId();
+          if (p != null) {
+            int g = getFileGroup(new File(p));
+            groups.get(g).add(item);
+          }
+        }
+      }
+      for (int g = 0; g <= 4; g++) {
+        ArrayList<ListItem> group = groups.get(g);
+        if (!group.isEmpty()) {
+          result.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, getGroupTitle(g), false));
+          result.addAll(group);
+        }
+      }
+    } else {
+      result.addAll(files);
+    }
+
     adapter.setItems(result, false);
   }
 
@@ -1042,6 +1096,18 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       return compareNatural(n1, n2);
     } else if (sortMode == 2) {
       // Nome Z→A natural
+      return compareNatural(n2, n1);
+    } else if (sortMode == 3) {
+      // Tipos A→Z: agrupa por tipo, dentro de cada grupo A→Z
+      int g1 = getFileGroup(o1);
+      int g2 = getFileGroup(o2);
+      if (g1 != g2) return Integer.compare(g1, g2);
+      return compareNatural(n1, n2);
+    } else if (sortMode == 4) {
+      // Tipos Z→A: agrupa por tipo, dentro de cada grupo Z→A
+      int g1 = getFileGroup(o1);
+      int g2 = getFileGroup(o2);
+      if (g1 != g2) return Integer.compare(g1, g2);
       return compareNatural(n2, n1);
     } else {
       // Data mais recente primeiro (padrão)

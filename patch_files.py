@@ -12,6 +12,13 @@ new_strings = [
     ('SortDateDesc', 'Data (mais recente)'),
     ('SortNameAsc', 'Nome (A-Z)'),
     ('SortNameDesc', 'Nome (Z-A)'),
+    ('SortTypeAsc', 'Tipos (A-Z)'),
+    ('SortTypeDesc', 'Tipos (Z-A)'),
+    ('SortGroupPhotos', '📷 Fotos'),
+    ('SortGroupVideos', '🎬 Vídeos'),
+    ('SortGroupGifs', '🎭 GIFs'),
+    ('SortGroupAudio', '🎵 Áudios'),
+    ('SortGroupOther', '📄 Outros'),
     ('UploadProgressNotificationChannel', 'Upload em andamento'),
 ]
 
@@ -34,6 +41,8 @@ new_ids = [
     'btn_sortDateDesc',
     'btn_sortNameAsc',
     'btn_sortNameDesc',
+    'btn_sortTypeAsc',
+    'btn_sortTypeDesc',
 ]
 
 for id_name in new_ids:
