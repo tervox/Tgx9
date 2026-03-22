@@ -169,7 +169,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       String path = stack.get(stack.size() - 1).path;
       if (path.startsWith(KEY_FOLDER)) {
         navigateToPath(null, path, getLastPath(2), false, null, null, null);
+      } else {
+        buildCells();
       }
+    } else {
+      buildCells();
     }
   }
 
