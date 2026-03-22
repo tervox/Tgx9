@@ -1009,9 +1009,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         int start1 = i, start2 = j;
         while (i < a.length() && Character.isDigit(a.charAt(i))) i++;
         while (j < b.length() && Character.isDigit(b.charAt(j))) j++;
-        int n1 = Integer.parseInt(a.substring(start1, i));
-        int n2 = Integer.parseInt(b.substring(start2, j));
-        if (n1 != n2) return Integer.compare(n1, n2);
+        long n1 = Long.parseLong(a.substring(start1, i));
+        long n2 = Long.parseLong(b.substring(start2, j));
+        if (n1 != n2) return Long.compare(n1, n2);
       } else {
         int cmp = Character.toLowerCase(ca) - Character.toLowerCase(cb);
         if (cmp != 0) return cmp;
