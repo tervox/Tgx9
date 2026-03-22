@@ -166,14 +166,14 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private void reloadCurrentFolder () {
     if (!stack.isEmpty()) {
-      String path = stack.get(stack.size() - 1).path;
-      if (path.startsWith(KEY_FOLDER)) {
-        navigateToPath(null, path, getLastPath(2), false, null, null, null);
-      } else {
-        buildCells();
+      String currentPath = stack.get(stack.size() - 1).path;
+      if (currentPath.startsWith(KEY_FOLDER)) {
+        String folderPath = currentPath.substring(KEY_FOLDER.length());
+        cancelCurrentLoadOperation();
+        LoadOperation operation = buildFolder(folderPath, getLastPath(2));
+        this.currentLoadOperation = operation;
+        Background.instance().post(operation);
       }
-    } else {
-      buildCells();
     }
   }
 
