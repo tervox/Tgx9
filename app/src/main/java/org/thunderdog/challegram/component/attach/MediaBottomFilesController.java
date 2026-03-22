@@ -165,16 +165,36 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   private void reloadCurrentFolder () {
-    if (!stack.isEmpty()) {
-      String currentPath = stack.get(stack.size() - 1).path;
-      if (currentPath.startsWith(KEY_FOLDER)) {
-        String folderPath = currentPath.substring(KEY_FOLDER.length());
-        cancelCurrentLoadOperation();
-        LoadOperation operation = buildFolder(folderPath, getLastPath(2));
-        this.currentLoadOperation = operation;
-        Background.instance().post(operation);
+    ArrayList<ListItem> current = new ArrayList<>(adapter.getItems());
+    ArrayList<ListItem> folders = new ArrayList<>();
+    ArrayList<ListItem> files = new ArrayList<>();
+    ListItem upper = null;
+    for (ListItem item : current) {
+      if (item.getId() == R.id.btn_folder_upper) {
+        upper = item;
+      } else if (item.getId() == R.id.btn_folder) {
+        folders.add(item);
+      } else if (item.getId() == R.id.btn_file) {
+        files.add(item);
       }
     }
+    java.util.Collections.sort(files, (a, b) -> {
+      Object da = a.getData();
+      Object db = b.getData();
+      if (da instanceof InlineResultCommon && db instanceof InlineResultCommon) {
+        File fa = ((InlineResultCommon) da).getFile();
+        File fb = ((InlineResultCommon) db).getFile();
+        if (fa != null && fb != null) {
+          return compare(fa, fb);
+        }
+      }
+      return 0;
+    });
+    ArrayList<ListItem> result = new ArrayList<>();
+    if (upper != null) result.add(upper);
+    result.addAll(folders);
+    result.addAll(files);
+    adapter.setItems(result, false);
   }
 
   private void selectAllFiles () {
