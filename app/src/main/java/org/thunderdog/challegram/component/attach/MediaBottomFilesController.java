@@ -123,6 +123,14 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       strings.append(R.string.SortByName);
       icons.append(R.drawable.baseline_settings_24);
 
+      ids.append(R.id.btn_refresh);
+      strings.append(R.string.Refresh);
+      icons.append(R.drawable.baseline_refresh_24);
+
+      ids.append(R.id.btn_toggleHidden);
+      strings.append(showHiddenFiles ? R.string.HideHiddenFiles : R.string.ShowHiddenFiles);
+      icons.append(R.drawable.baseline_visibility_24);
+
       showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
         if (optionId == R.id.btn_selectAll) {
           selectAllFiles();
@@ -130,14 +138,33 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           showSystemPicker(false);
         } else if (optionId == R.id.btn_sortByName) {
           showSortOptions();
+        } else if (optionId == R.id.btn_refresh) {
+          refreshCurrentFolder();
+        } else if (optionId == R.id.btn_toggleHidden) {
+          showHiddenFiles = !showHiddenFiles;
+          refreshCurrentFolder();
         }
         return true;
       });
     }
   }
 
-  // Ordenação: 0=data desc (padrão), 1=nome asc, 2=nome desc
+  // Ordenação: 0=data desc (padrão), 1=nome asc, 2=nome desc, 3=tipos asc, 4=tipos desc
   private int sortMode = 0;
+  private boolean showHiddenFiles = false;
+
+  private void refreshCurrentFolder () {
+    if (!stack.isEmpty()) {
+      String currentPath = stack.get(stack.size() - 1).path;
+      if (currentPath.startsWith(KEY_FOLDER)) {
+        String folderPath = currentPath.substring(KEY_FOLDER.length());
+        cancelCurrentLoadOperation();
+        LoadOperation operation = buildFolder(folderPath, getLastPath(2));
+        this.currentLoadOperation = operation;
+        Background.instance().post(operation);
+      }
+    }
+  }
 
   private void showSortOptions () {
     int[] ids = new int[]{R.id.btn_sortDateDesc, R.id.btn_sortNameAsc, R.id.btn_sortNameDesc, R.id.btn_sortTypeAsc, R.id.btn_sortTypeDesc};
@@ -1011,7 +1038,16 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           }
 
           ArrayList<File> filesList = new ArrayList<>(files.length);
-          Collections.addAll(filesList, files);
+          boolean allowHidden = showHiddenFiles && (
+            path.startsWith("/sdcard/Pictures") ||
+            path.startsWith("/sdcard/Download/1DMP") ||
+            path.startsWith("/storage/emulated/0/Pictures") ||
+            path.startsWith("/storage/emulated/0/Download/1DMP")
+          );
+          for (File f : files) {
+            if (!allowHidden && f.getName().startsWith(".")) continue;
+            filesList.add(f);
+          }
           Collections.sort(filesList, MediaBottomFilesController.this);
 
           ArrayList<ListItem> items = new ArrayList<>(filesList.size() + 1);

@@ -21,24 +21,26 @@ import org.thunderdog.challegram.tool.UI;
 public class UploadNotificationManager {
 
   private static final String CHANNEL_ID = "upload_progress";
-  private static final int NOTIF_ID = 55000; // ID único fixo
-  private static final long UPDATE_INTERVAL_MS = 1000;
-  private static final long DONE_DISMISS_MS = 3000;
+  private static final int NOTIF_ID = 55000;
+  private static final long UPDATE_INTERVAL_MS = 500;
+  private static final long DONE_DISMISS_MS = 4000;
 
   private static UploadNotificationManager instance;
 
   public static UploadNotificationManager instance () {
-    if (instance == null) {
-      instance = new UploadNotificationManager();
-    }
+    if (instance == null) instance = new UploadNotificationManager();
     return instance;
   }
 
-  // Todos os arquivos ativos no momento
   private final SparseArray<TdApi.File> activeFiles = new SparseArray<>();
   private final SparseLongArray lastUpdateTime = new SparseLongArray();
   private final Handler handler = new Handler(Looper.getMainLooper());
   private Runnable dismissRunnable;
+
+  // Total e enviados para calcular faltando
+  private int totalStarted = 0;
+  private int totalCompleted = 0;
+  private boolean sessionActive = false;
 
   public void onFileUpdate (TdApi.UpdateFile update) {
     TdApi.File file = update.file;
@@ -54,35 +56,45 @@ public class UploadNotificationManager {
     if (nm == null) return;
 
     if (isDone && !isUploading) {
-      // Só processa se estava sendo rastreado (upload iniciado pela sessão atual)
       if (activeFiles.get(file.id) == null) return;
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
+      totalCompleted++;
 
       if (activeFiles.size() == 0) {
-        // Todos terminaram — mostra "Concluído" e some em 3s
         showDoneNotification(ctx, nm);
+        // Reset sessão
+        totalStarted = 0;
+        totalCompleted = 0;
+        sessionActive = false;
       } else {
-        // Ainda tem arquivos ativos — atualiza com o próximo
         showProgressNotification(ctx, nm);
       }
       return;
     }
 
-    // Arquivo ativo
+    // Novo arquivo começando upload
+    if (activeFiles.get(file.id) == null) {
+      if (!sessionActive) {
+        // Nova sessão de upload
+        totalStarted = 0;
+        totalCompleted = 0;
+        sessionActive = true;
+        // Cancela dismiss pendente
+        if (dismissRunnable != null) {
+          handler.removeCallbacks(dismissRunnable);
+          dismissRunnable = null;
+        }
+      }
+      totalStarted++;
+    }
+
     activeFiles.put(file.id, file);
 
-    // Throttle
     long now = System.currentTimeMillis();
     long last = lastUpdateTime.get(file.id, 0L);
     if (now - last < UPDATE_INTERVAL_MS) return;
     lastUpdateTime.put(file.id, now);
-
-    // Cancela dismiss pendente se um novo upload começou
-    if (dismissRunnable != null) {
-      handler.removeCallbacks(dismissRunnable);
-      dismissRunnable = null;
-    }
 
     showProgressNotification(ctx, nm);
   }
@@ -90,7 +102,6 @@ public class UploadNotificationManager {
   private void showProgressNotification (Context ctx, NotificationManager nm) {
     if (activeFiles.size() == 0) return;
 
-    // Pega o arquivo com upload mais avançado (currentFile)
     TdApi.File currentFile = null;
     for (int i = 0; i < activeFiles.size(); i++) {
       TdApi.File f = activeFiles.valueAt(i);
@@ -100,15 +111,14 @@ public class UploadNotificationManager {
     }
     if (currentFile == null) return;
 
-    int total_files = activeFiles.size();
     long total = currentFile.size;
     long uploaded = currentFile.remote.uploadedSize;
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
-    String fileName = getFileName(currentFile);
 
-    String title = total_files > 1
-      ? "Enviando " + total_files + " arquivo(s)"
-      : "Enviando " + fileName;
+    int faltam = totalStarted - totalCompleted;
+    String title = faltam > 1
+      ? "Faltam " + faltam + " de " + totalStarted + " arquivo(s)"
+      : "Enviando último arquivo...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
     nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
@@ -116,8 +126,9 @@ public class UploadNotificationManager {
   }
 
   private void showDoneNotification (Context ctx, NotificationManager nm) {
-    nm.notify(NOTIF_ID, buildNotif(ctx, "Envio concluído",
-      "Todos os arquivos foram enviados",
+    String title = "✅ Envio concluído!";
+    String text = totalCompleted + " arquivo(s) enviado(s) com sucesso";
+    nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
       android.R.drawable.stat_sys_upload_done, false, 0, 0, false));
 
     dismissRunnable = () -> {

@@ -19,6 +19,9 @@ new_strings = [
     ('SortGroupGifs', '🎭 GIFs'),
     ('SortGroupAudio', '🎵 Áudios'),
     ('SortGroupOther', '📄 Outros'),
+    ('Refresh', 'Atualizar'),
+    ('ShowHiddenFiles', 'Mostrar ocultos'),
+    ('HideHiddenFiles', 'Ocultar ocultos'),
     ('UploadProgressNotificationChannel', 'Upload em andamento'),
 ]
 
@@ -43,6 +46,8 @@ new_ids = [
     'btn_sortNameDesc',
     'btn_sortTypeAsc',
     'btn_sortTypeDesc',
+    'btn_refresh',
+    'btn_toggleHidden',
 ]
 
 for id_name in new_ids:
