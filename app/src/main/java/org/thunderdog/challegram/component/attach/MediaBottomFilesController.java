@@ -163,10 +163,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         this.currentLoadOperation = operation;
         Background.instance().post(operation);
         return;
+      } else if (KEY_GALLERY.equals(currentPath)) {
+        navigateToPath(null, KEY_GALLERY, getLastPath(2), false, null, null, null);
+        return;
       }
     }
-    // Tela principal - reconstrói
-    buildCells();
+    // Tela principal - reconstrói sem voltar para inicio
+    navigateToPath(null, null, null, false, null, null, null);
   }
 
   private void showSortOptions () {
