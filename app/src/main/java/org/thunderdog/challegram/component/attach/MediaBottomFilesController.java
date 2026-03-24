@@ -797,6 +797,38 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           }
         }
 
+        // Mostra pastas ocultas se ativado
+        if (showHiddenFiles) {
+          String[] basePaths = {
+            "/sdcard/Pictures",
+            "/sdcard/Download/1DMP",
+            "/storage/emulated/0/Pictures",
+            "/storage/emulated/0/Download/1DMP"
+          };
+          boolean addedHiddenHeader = false;
+          java.util.HashSet<String> seen = new java.util.HashSet<>();
+          for (String basePath : basePaths) {
+            java.io.File baseDir = new java.io.File(basePath);
+            if (!baseDir.exists() || !baseDir.isDirectory()) continue;
+            java.io.File[] dirs = baseDir.listFiles();
+            if (dirs == null) continue;
+            for (java.io.File dir : dirs) {
+              if (!dir.isDirectory() || !dir.getName().startsWith(".")) continue;
+              if (seen.contains(dir.getAbsolutePath())) continue;
+              seen.add(dir.getAbsolutePath());
+              java.io.File[] files = dir.listFiles();
+              int count = files != null ? files.length : 0;
+              if (count == 0) continue;
+              if (!addedHiddenHeader) {
+                items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ShowHiddenFiles));
+                addedHiddenHeader = true;
+              }
+              InlineResultCommon folderResult = new InlineResultCommon(context, tdlib, KEY_FOLDER + dir.getAbsolutePath(), ColorId.fileAttach, R.drawable.baseline_folder_24, dir.getName(), Lang.plural(R.string.xFiles, count)).setDisableProgressInteract(true);
+              items.add(createItem(folderResult, R.id.btn_folder));
+            }
+          }
+        }
+
         if (!items.isEmpty()) {
           return new Result(items, true);
         }
