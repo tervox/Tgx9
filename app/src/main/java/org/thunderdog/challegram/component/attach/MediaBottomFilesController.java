@@ -811,6 +811,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             if (dirs == null) continue;
             for (java.io.File dir : dirs) {
               if (!dir.isDirectory()) continue;
+              if (dir.getName().startsWith(".")) continue;
               java.io.File nomedia = new java.io.File(dir, ".nomedia");
               if (!nomedia.exists()) continue;
               java.io.File[] files = dir.listFiles();
