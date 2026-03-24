@@ -797,25 +797,29 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           }
         }
 
-        // Mostra pastas ocultas se ativado
+        // Mostra pastas com .nomedia se ativado
         if (showHiddenFiles) {
           String[] basePaths = {
             android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/Pictures",
             android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/Download/1DMP"
           };
           boolean addedHiddenHeader = false;
-          java.util.HashSet<String> seen = new java.util.HashSet<>();
           for (String basePath : basePaths) {
             java.io.File baseDir = new java.io.File(basePath);
             if (!baseDir.exists() || !baseDir.isDirectory()) continue;
             java.io.File[] dirs = baseDir.listFiles();
             if (dirs == null) continue;
             for (java.io.File dir : dirs) {
-              if (!dir.isDirectory() || !dir.getName().startsWith(".")) continue;
-              if (seen.contains(dir.getAbsolutePath())) continue;
-              seen.add(dir.getAbsolutePath());
+              if (!dir.isDirectory()) continue;
+              java.io.File nomedia = new java.io.File(dir, ".nomedia");
+              if (!nomedia.exists()) continue;
               java.io.File[] files = dir.listFiles();
-              int count = files != null ? files.length : 0;
+              int count = 0;
+              if (files != null) {
+                for (java.io.File f : files) {
+                  if (!f.getName().equals(".nomedia")) count++;
+                }
+              }
               if (count == 0) continue;
               if (!addedHiddenHeader) {
                 items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ShowHiddenFiles));
