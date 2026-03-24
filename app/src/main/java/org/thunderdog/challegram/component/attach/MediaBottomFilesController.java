@@ -821,7 +821,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
                   if (!f.getName().equals(".nomedia")) count++;
                 }
               }
-              if (count == 0) continue;
               if (!addedHiddenHeader) {
                 items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ShowHiddenFiles));
                 addedHiddenHeader = true;
