@@ -800,10 +800,8 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         // Mostra pastas ocultas se ativado
         if (showHiddenFiles) {
           String[] basePaths = {
-            "/sdcard/Pictures",
-            "/sdcard/Download/1DMP",
-            "/storage/emulated/0/Pictures",
-            "/storage/emulated/0/Download/1DMP"
+            android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/Pictures",
+            android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/Download/1DMP"
           };
           boolean addedHiddenHeader = false;
           java.util.HashSet<String> seen = new java.util.HashSet<>();
