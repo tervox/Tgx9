@@ -98,3 +98,25 @@ for perm in perms:
         print(f'SKIP: {perm} already exists')
 
 open(manifest_path, 'w').write(manifest)
+
+# ── build.gradle signing config ──────────────────────────────────────────────
+import re
+gradle_path = 'tgx/app/build.gradle.kts'
+if not open(gradle_path).read().__contains__('signingConfigs'):
+    gradle = open(gradle_path).read()
+    signing_block = """
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("KEYSTORE_FILE") ?: "minha-chave.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: ""
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+        }
+    }
+"""
+    gradle = gradle.replace('buildTypes {', signing_block + '    buildTypes {')
+    gradle = gradle.replace('release {', 'release {\n            signingConfig = signingConfigs.getByName("release")')
+    open(gradle_path, 'w').write(gradle)
+    print("OK: signing config added")
+else:
+    print("SKIP: signing config already exists")
