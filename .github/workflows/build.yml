@@ -69,7 +69,7 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > tgx/local.properties
           printf 'telegram.api_id=39028426\n' >> tgx/local.properties
           printf 'telegram.api_hash=e815e4f8345295f5d21b4612b17af3b4\n' >> tgx/local.properties
-          printf 'app.id=org.thunderdog.challegram\n' >> tgx/local.properties
+          printf 'app.id=com.tervox.tgxmod\n' >> tgx/local.properties
           printf 'app.name=TelegramX Mod\n' >> tgx/local.properties
           printf 'app.download_url=https://t.me/tgx_android\n' >> tgx/local.properties
           printf 'app.disable_signing=true\n' >> tgx/local.properties
