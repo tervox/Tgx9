@@ -78,3 +78,23 @@ else:
     print('SKIP: no bad drawables found')
 
 print('patch_files.py done!')
+
+# ── AndroidManifest.xml ───────────────────────────────────────────────────────
+manifest_path = 'tgx/app/src/main/AndroidManifest.xml'
+manifest = open(manifest_path).read()
+
+perms = [
+    'android.permission.MANAGE_EXTERNAL_STORAGE',
+    'android.permission.READ_EXTERNAL_STORAGE',
+    'android.permission.WRITE_EXTERNAL_STORAGE',
+]
+
+for perm in perms:
+    tag = f'<uses-permission android:name="{perm}"'
+    if tag not in manifest:
+        manifest = manifest.replace('<application', f'{tag} />\n    <application', 1)
+        print(f'OK: added {perm}')
+    else:
+        print(f'SKIP: {perm} already exists')
+
+open(manifest_path, 'w').write(manifest)
