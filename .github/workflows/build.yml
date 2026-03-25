@@ -99,7 +99,7 @@ jobs:
       - name: Build APK
         run: |
           cd tgx
-          ./gradlew assembleLegacyArm32Debug --stacktrace
+          ./gradlew assembleLegacyArm32Release --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
