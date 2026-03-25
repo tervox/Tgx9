@@ -96,19 +96,17 @@ jobs:
           chmod +x gradlew
           sed -i 's/\r$//' gradlew
 
-      - name: Sign APK setup
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > tgx/minha-chave.jks
-
       - name: Build APK
         run: |
           cd tgx
           ./gradlew assembleLegacyArm32Release --stacktrace
-        env:
-          KEYSTORE_FILE: ${{ github.workspace }}/tgx/minha-chave.jks
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Sign APK
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > minha-chave.jks
+          APK=$(find tgx/app/build/outputs/apk -name "*.apk" | head -1)
+          $ANDROID_SDK_ROOT/build-tools/$(ls $ANDROID_SDK_ROOT/build-tools | tail -1)/apksigner sign             --ks minha-chave.jks             --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }}             --key-pass pass:${{ secrets.KEY_PASSWORD }}             --ks-key-alias ${{ secrets.KEY_ALIAS }}             "$APK"
+          echo "Signed: $APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
