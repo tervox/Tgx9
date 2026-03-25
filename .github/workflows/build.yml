@@ -102,11 +102,15 @@ jobs:
           ./gradlew assembleLegacyArm32Release --stacktrace
 
       - name: Sign APK
+        env:
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > minha-chave.jks
           APK=$(find tgx/app/build/outputs/apk -name "*.apk" | head -1)
           BUILD_TOOLS=$ANDROID_SDK_ROOT/build-tools/$(ls $ANDROID_SDK_ROOT/build-tools | tail -1)
-          $BUILD_TOOLS/apksigner sign --ks minha-chave.jks --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} --ks-key-alias ${{ secrets.KEY_ALIAS }} --key-pass pass:${{ secrets.KEY_PASSWORD }} --out signed.apk "$APK"
+          $BUILD_TOOLS/apksigner sign --ks minha-chave.jks --ks-pass "pass:$KS_PASS" --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" --out signed.apk "$APK"
           cp signed.apk "$APK"
 
       - name: Upload APK
