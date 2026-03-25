@@ -1072,10 +1072,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
           File[] files = dir.listFiles();
 
-          if (files == null || files.length == 0) {
-            openAlert(this, R.string.AppName, R.string.FolderEmpty);
-            return null;
-          }
+          if (files == null) files = new File[0];
 
           ArrayList<File> filesList = new ArrayList<>(files.length);
           boolean allowHidden = showHiddenFiles && (
