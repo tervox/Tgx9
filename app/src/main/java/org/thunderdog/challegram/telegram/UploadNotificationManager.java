@@ -38,6 +38,7 @@ public class UploadNotificationManager {
   private final SparseArray<TdApi.File> activeFiles = new SparseArray<>();
   private final SparseLongArray lastUpdateTime = new SparseLongArray();
   private final java.util.HashSet<Integer> countedIds = new java.util.HashSet<>();
+  private final java.util.HashSet<Integer> everSeenIds = new java.util.HashSet<>();
   private final Handler handler = new Handler(Looper.getMainLooper());
   private Runnable dismissRunnable;
 
@@ -151,10 +152,12 @@ public class UploadNotificationManager {
         totalStarted = 0;
         totalCompleted = 0;
         countedIds.clear();
+        everSeenIds.clear();
         sessionActive = true;
         startService(ctx);
       }
-      if (!countedIds.contains(file.id)) {
+      if (!everSeenIds.contains(file.id)) {
+        everSeenIds.add(file.id);
         countedIds.add(file.id);
         totalStarted++;
       }
@@ -168,6 +171,27 @@ public class UploadNotificationManager {
     lastUpdateTime.put(file.id, now);
 
     showProgressNotification(ctx, nm);
+
+    // Timeout: se não houver atualização por 8s, força concluído
+    handler.removeCallbacksAndMessages("timeout");
+    handler.postAtTime(() -> {
+      if (sessionActive && activeFiles.size() > 0) {
+        Context c = UI.getAppContext();
+        if (c == null) return;
+        NotificationManager n = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (n == null) return;
+        int completed = totalCompleted + activeFiles.size();
+        countedIds.clear();
+        everSeenIds.clear();
+        activeFiles.clear();
+        lastUpdateTime.clear();
+        totalStarted = 0;
+        totalCompleted = 0;
+        sessionActive = false;
+        stopService(c);
+        showDoneNotification(c, n, completed);
+      }
+    }, "timeout", android.os.SystemClock.uptimeMillis() + 8000);
   }
 
   private void showProgressNotification (Context ctx, NotificationManager nm) {
