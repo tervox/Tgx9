@@ -120,3 +120,14 @@ if not open(gradle_path).read().__contains__('signingConfigs'):
     print("OK: signing config added")
 else:
     print("SKIP: signing config already exists")
+
+# ── Register UploadService in AndroidManifest ─────────────────────────────────
+manifest_path = 'tgx/app/src/main/AndroidManifest.xml'
+manifest = open(manifest_path).read()
+service_tag = '<service android:name="org.thunderdog.challegram.telegram.UploadNotificationManager$UploadService" android:foregroundServiceType="dataSync" android:exported="false" />'
+if service_tag not in manifest:
+    manifest = manifest.replace('</application>', f'    {service_tag}\n</application>')
+    open(manifest_path, 'w').write(manifest)
+    print("OK: UploadService registered")
+else:
+    print("SKIP: UploadService already registered")
