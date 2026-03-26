@@ -314,7 +314,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
               results.add(createItem(context, tdlib, new File(filePath), null));
             } else {
               String path = uri.toString();
-            // Conversão .m4v → MP4 com qualidade quase original (mínima perda)
             if (path != null && path.toLowerCase().endsWith(".m4v")) {
                 try {
                     String outPath = path.substring(0, path.length() - 4) + ".mp4";
@@ -452,7 +451,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         operation = buildBucket(data);
       } else if (currentPath.startsWith(KEY_FOLDER)) {
         String path = currentPath.substring(KEY_FOLDER.length());
-            // Conversão .m4v → MP4 com qualidade quase original (mínima perda)
             if (path != null && path.toLowerCase().endsWith(".m4v")) {
                 try {
                     String outPath = path.substring(0, path.length() - 4) + ".mp4";
@@ -1442,7 +1440,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         navigateInside(v, KEY_BUCKET, result);
       } else {
         String path = result.getId();
-            // Conversão .m4v → MP4 com qualidade quase original (mínima perda)
             if (path != null && path.toLowerCase().endsWith(".m4v")) {
                 try {
                     String outPath = path.substring(0, path.length() - 4) + ".mp4";
@@ -1554,7 +1551,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private void navigateTo (View view, InlineResultCommon result) {
     String path = result.getId();
-            // Conversão .m4v → MP4 com qualidade quase original (mínima perda)
             if (path != null && path.toLowerCase().endsWith(".m4v")) {
                 try {
                     String outPath = path.substring(0, path.length() - 4) + ".mp4";
