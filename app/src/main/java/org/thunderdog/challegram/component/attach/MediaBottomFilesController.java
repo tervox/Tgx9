@@ -209,7 +209,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     String name = f.getName().toLowerCase();
     if (name.endsWith(".gif")) return 2;
     if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".bmp") || name.endsWith(".heic")) return 0;
-    if (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".mov") || name.endsWith(".avi") || name.endsWith(".webm") || name.endsWith(".flv") || name.endsWith(".wmv") || name.endsWith(".m4v") || name.endsWith(".3gp")) return 1;
+    if (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".mov") || name.endsWith(".avi") || name.endsWith(".webm") || name.endsWith(".flv") || name.endsWith(".wmv") || name.endsWith(".mp4") || name.endsWith(".3gp")) return 1;
     if (name.endsWith(".mp3") || name.endsWith(".m4a") || name.endsWith(".aac") || name.endsWith(".ogg") || name.endsWith(".wav") || name.endsWith(".flac")) return 3;
     return 4;
   }
