@@ -85,6 +85,8 @@ manifest = open(manifest_path).read()
 
 perms = [
     'android.permission.MANAGE_EXTERNAL_STORAGE',
+    'android.permission.FOREGROUND_SERVICE',
+    'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
     'android.permission.READ_EXTERNAL_STORAGE',
     'android.permission.WRITE_EXTERNAL_STORAGE',
 ]

@@ -66,7 +66,12 @@ public class UploadNotificationManager {
         .setContentIntent(pi)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .build();
-      startForeground(NOTIF_ID, notif);
+      try {
+        startForeground(NOTIF_ID, notif);
+      } catch (Throwable t) {
+        stopSelf();
+        return START_NOT_STICKY;
+      }
       return START_STICKY;
     }
 
