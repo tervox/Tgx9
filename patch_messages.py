@@ -28,11 +28,7 @@ new = '''          case TdApi.Message.CONSTRUCTOR: {
             int sentCount = sentFunctionsCount[0];
             if (sentCount < expectedCount) {
               tdlib.listeners().subscribeToUpdates(message);
-              // Delay 600ms between sends to avoid flood
-              final int nextIndex = sentCount;
-              final Client.ResultHandler self = this;
-              android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
-              h.postDelayed(() -> tdlib.client().send(functions.get(nextIndex), self), 600);
+              tdlib.client().send(functions.get(sentCount), this);
             } else {
               done = true;
             }

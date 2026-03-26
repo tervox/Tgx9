@@ -75,16 +75,15 @@ public class UploadNotificationManager {
 
     // Novo arquivo começando upload
     if (activeFiles.get(file.id) == null) {
+      // Cancela dismiss pendente se havia
+      if (dismissRunnable != null) {
+        handler.removeCallbacks(dismissRunnable);
+        dismissRunnable = null;
+      }
       if (!sessionActive) {
-        // Nova sessão de upload
         totalStarted = 0;
         totalCompleted = 0;
         sessionActive = true;
-        // Cancela dismiss pendente
-        if (dismissRunnable != null) {
-          handler.removeCallbacks(dismissRunnable);
-          dismissRunnable = null;
-        }
       }
       totalStarted++;
     }

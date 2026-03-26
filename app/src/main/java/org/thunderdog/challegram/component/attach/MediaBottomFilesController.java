@@ -1065,20 +1065,48 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             return null;
           }
 
-          File[] files = dir.listFiles();
-
-          if (files == null) files = new File[0];
-
-          ArrayList<File> filesList = new ArrayList<>(files.length);
-          boolean allowHidden = showHiddenFiles && (
+          boolean isHiddenFolder = showHiddenFiles && (
             path.startsWith("/sdcard/Pictures") ||
             path.startsWith("/sdcard/Download/1DMP") ||
             path.startsWith("/storage/emulated/0/Pictures") ||
             path.startsWith("/storage/emulated/0/Download/1DMP")
           );
-          for (File f : files) {
-            if (!allowHidden && f.getName().startsWith(".")) continue;
-            filesList.add(f);
+
+          ArrayList<File> filesList = new ArrayList<>();
+
+          if (isHiddenFolder) {
+            // Usa MediaStore para listar arquivos em pastas com .nomedia
+            android.database.Cursor cursor = null;
+            try {
+              String[] projection = { android.provider.MediaStore.Files.FileColumns.DATA };
+              String selection = android.provider.MediaStore.Files.FileColumns.DATA + " LIKE ?";
+              String[] selectionArgs = { path + "/%" };
+              cursor = UI.getAppContext().getContentResolver().query(
+                android.provider.MediaStore.Files.getContentUri("external"),
+                projection, selection, selectionArgs, null
+              );
+              if (cursor != null) {
+                while (cursor.moveToNext()) {
+                  String filePath = cursor.getString(0);
+                  if (filePath != null) {
+                    File f = new File(filePath);
+                    // Só arquivos diretos (não subpastas)
+                    if (f.getParentFile() != null && f.getParentFile().getAbsolutePath().equals(path)) {
+                      if (!f.getName().startsWith(".")) filesList.add(f);
+                    }
+                  }
+                }
+              }
+            } finally {
+              if (cursor != null) cursor.close();
+            }
+          } else {
+            File[] files = dir.listFiles();
+            if (files == null) files = new File[0];
+            for (File f : files) {
+              if (f.getName().startsWith(".")) continue;
+              filesList.add(f);
+            }
           }
           Collections.sort(filesList, MediaBottomFilesController.this);
 

@@ -6,9 +6,10 @@ old = '  private void updateFile (TdApi.UpdateFile update) {\n    listeners.upda
 new = ('  private void updateFile (TdApi.UpdateFile update) {\n'
        '    listeners.updateFile(update);\n\n'
        '    UploadNotificationManager.instance().onFileUpdate(update);\n'
-       '    // Delete TDLib local cache copy after upload completes (photos, videos, any file)\n'
-       '    if (update.file.remote.isUploadingCompleted && !update.file.remote.isUploadingActive) {\n'
-       '      client().send(new org.drinkless.tdlib.TdApi.DeleteFile(update.file.id), silentHandler());\n'
+       '    if (update.file.remote.isUploadingCompleted && !update.file.remote.isUploadingActive\n'
+       '        && update.file.local.path != null && !update.file.local.path.isEmpty()) {\n'
+       '      android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());\n'
+       '      h.postDelayed(() -> client().send(new org.drinkless.tdlib.TdApi.DeleteFile(update.file.id), silentHandler()), 3000);\n'
        '    }\n\n'
        '    context.player()')
 
