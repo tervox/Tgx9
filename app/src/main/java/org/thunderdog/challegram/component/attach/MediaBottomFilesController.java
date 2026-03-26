@@ -313,7 +313,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             if (!StringUtils.isEmpty(filePath) && U.canReadFile(filePath)) {
               results.add(createItem(context, tdlib, new File(filePath), null));
             } else {
-              final String path = uri.toString();
+              String path = uri.toString();
             // Conversão .m4v → MP4 com qualidade quase original (mínima perda)
             if (path != null && path.toLowerCase().endsWith(".m4v")) {
                 try {
@@ -1162,7 +1162,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     });
   }
 
-  private LoadOperation buildFolder (final String path, final String parent) {
+  private LoadOperation buildFolder (String path, final String parent) {
     return new LoadOperation(this) {
       @Override
       public Result act () {
@@ -1745,7 +1745,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private ArrayList<StackItem> stack = new ArrayList<>();
 
   private static class StackItem {
-    private final String path;
+    private String path;
     private final int position, positionOffset;
 
     public StackItem (String path, int position, int positionOffset) {
@@ -1778,7 +1778,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     return stack.size() < skipCount ? null : normalizePath(stack.get(stack.size() - skipCount).path);
   }
 
-  private void navigateInside (final View view, final String path, final InlineResultCommon data) {
+  private void navigateInside (final View view, String path, final InlineResultCommon data) {
     if (inFileSelectMode) {
       mediaLayout.cancelMultiSelection();
     }
