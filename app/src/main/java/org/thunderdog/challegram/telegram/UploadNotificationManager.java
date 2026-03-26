@@ -191,7 +191,7 @@ public class UploadNotificationManager {
         stopService(c);
         showDoneNotification(c, n, completed);
       }
-    }, "timeout", android.os.SystemClock.uptimeMillis() + 8000);
+    }, "timeout", android.os.SystemClock.uptimeMillis() + 30000);
   }
 
   private void showProgressNotification (Context ctx, NotificationManager nm) {
@@ -213,7 +213,7 @@ public class UploadNotificationManager {
     int faltam = totalStarted - totalCompleted;
     String title = faltam > 1
       ? "Faltam " + faltam + " de " + totalStarted + " arquivo(s)"
-      : "Enviando último arquivo...";
+      : "Enviando arquivo " + totalCompleted + " de " + totalStarted + "...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
     nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
