@@ -131,3 +131,31 @@ if service_tag not in manifest:
     print("OK: UploadService registered")
 else:
     print("SKIP: UploadService already registered")
+
+# ── Forçar Animation como Video para envio em lotes ─────────────────────────
+td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
+td = open(td_path).read()
+
+old1 = '                if (allowAnimation && durationMs < TimeUnit.SECONDS.toMillis(30) && info.knownSize < ByteUnit.MB.toBytes(10) && numTracks == 1) {\n                  return new TdApi.InputMessageAnimation(inputFile, null, null, (int) TimeUnit.MILLISECONDS.toSeconds(durationMs), width, height, caption, showCaptionAboveMedia, hasSpoiler);\n                } else if (allowVideo && durationMs > 0) {'
+new1 = '                if (allowVideo && durationMs > 0) {'
+
+old2 = '                if (allowAnimation && durationMs < TimeUnit.SECONDS.toMillis(30) && info.knownSize < ByteUnit.MB.toBytes(10) && !metadata.hasAudio) {\n                  return new TdApi.InputMessageAnimation(inputFile, null, null, (int) TimeUnit.MILLISECONDS.toSeconds(durationMs), videoWidth, videoHeight, caption, showCaptionAboveMedia, hasSpoiler);\n                } else if (allowVideo && durationMs > 0) {'
+new2 = '                if (allowVideo && durationMs > 0) {'
+
+changed = False
+if old1 in td:
+    td = td.replace(old1, new1)
+    changed = True
+    print("OK: Animation->Video (content uri)")
+else:
+    print("SKIP: pattern 1 not found")
+
+if old2 in td:
+    td = td.replace(old2, new2)
+    changed = True
+    print("OK: Animation->Video (file path)")
+else:
+    print("SKIP: pattern 2 not found")
+
+if changed:
+    open(td_path, 'w').write(td)
