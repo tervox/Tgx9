@@ -314,6 +314,24 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
               results.add(createItem(context, tdlib, new File(filePath), null));
             } else {
               final String path = uri.toString();
+            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
+            if (path != null && path.toLowerCase().endsWith(".m4v")) {
+                try {
+                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
+                    String[] cmd = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium",
+                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+                                    "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
+                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
+                    p.waitFor();
+                    if (new java.io.File(outPath).exists()) {
+                        path = outPath;
+                    }
+                } catch (Throwable ignored) {
+                    // fallback: só renomeia
+                    path = path.substring(0, path.length() - 4) + ".mp4";
+                }
+            }
+
               TD.createInputFile(path, null, fileInfo);
               results.add(createItem(context, tdlib, path, R.drawable.baseline_insert_drive_file_24, fileInfo.title, Strings.buildSize(fileInfo.knownSize)));
             }
@@ -398,6 +416,24 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         operation = buildBucket(data);
       } else if (currentPath.startsWith(KEY_FOLDER)) {
         String path = currentPath.substring(KEY_FOLDER.length());
+            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
+            if (path != null && path.toLowerCase().endsWith(".m4v")) {
+                try {
+                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
+                    String[] cmd = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium",
+                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+                                    "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
+                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
+                    p.waitFor();
+                    if (new java.io.File(outPath).exists()) {
+                        path = outPath;
+                    }
+                } catch (Throwable ignored) {
+                    // fallback: só renomeia
+                    path = path.substring(0, path.length() - 4) + ".mp4";
+                }
+            }
+
         operation = buildFolder(path, parentPath);
         String internalPath = UI.getAppContext().getFilesDir().getPath();
         File external = UI.getAppContext().getExternalFilesDir(null);
@@ -1334,6 +1370,24 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         navigateInside(v, KEY_BUCKET, result);
       } else {
         String path = result.getId();
+            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
+            if (path != null && path.toLowerCase().endsWith(".m4v")) {
+                try {
+                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
+                    String[] cmd = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium",
+                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+                                    "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
+                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
+                    p.waitFor();
+                    if (new java.io.File(outPath).exists()) {
+                        path = outPath;
+                    }
+                } catch (Throwable ignored) {
+                    // fallback: só renomeia
+                    path = path.substring(0, path.length() - 4) + ".mp4";
+                }
+            }
+
         boolean isMusic = KEY_MUSIC.equals(path);
         if (mediaLayout.getFilesControllerDelegate().showRestriction(v, isMusic ? RightId.SEND_AUDIO : RightId.SEND_DOCS)) {
           return;
@@ -1392,6 +1446,24 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private void navigateTo (View view, InlineResultCommon result) {
     String path = result.getId();
+            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
+            if (path != null && path.toLowerCase().endsWith(".m4v")) {
+                try {
+                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
+                    String[] cmd = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium",
+                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+                                    "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
+                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
+                    p.waitFor();
+                    if (new java.io.File(outPath).exists()) {
+                        path = outPath;
+                    }
+                } catch (Throwable ignored) {
+                    // fallback: só renomeia
+                    path = path.substring(0, path.length() - 4) + ".mp4";
+                }
+            }
+
     if (path != null) {
       if (KEY_GALLERY.equals(path) || KEY_MUSIC.equals(path) || KEY_DOWNLOADS.equals(path) || KEY_BUCKET.equals(path) || path.startsWith(KEY_FOLDER)) {
         navigateInside(view, path, result);
