@@ -123,7 +123,10 @@ public class UploadNotificationManager {
       if (activeFiles.get(file.id) == null) return;
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
-      totalCompleted++;
+      // Garante que foi contado antes de completar
+      if (countedIds.contains(file.id)) {
+        totalCompleted++;
+      }
 
       if (activeFiles.size() == 0) {
         countedIds.clear();

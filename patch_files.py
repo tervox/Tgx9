@@ -161,3 +161,31 @@ else:
 
 if changed:
     open(td_path, 'w').write(td)
+
+# ── Renomear .m4v para .mp4 antes de enviar ──────────────────────────────────
+td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
+td = open(td_path).read()
+
+old_m4v = '  public static TdApi.InputFile createInputFile (String path, @Nullable String type, @Nullable FileInfo info) {'
+new_m4v = '''  public static TdApi.InputFile createInputFile (String path, @Nullable String type, @Nullable FileInfo info) {
+    // Renomeia .m4v para .mp4 para envio como video
+    if (path != null && path.toLowerCase().endsWith(".m4v")) {
+      try {
+        java.io.File src = new java.io.File(path);
+        if (src.exists()) {
+          String newPath = path.substring(0, path.length() - 4) + "_tgx.mp4";
+          java.io.File dst = new java.io.File(newPath);
+          if (!dst.exists()) {
+            java.nio.file.Files.copy(src.toPath(), dst.toPath());
+          }
+          path = newPath;
+        }
+      } catch (Throwable ignored) {}
+    }'''
+
+if old_m4v in td:
+    td = td.replace(old_m4v, new_m4v)
+    open(td_path, 'w').write(td)
+    print("OK: .m4v renomeado para .mp4")
+else:
+    print("SKIP: pattern not found")
