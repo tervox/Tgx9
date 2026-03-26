@@ -34,10 +34,10 @@ public class UploadNotificationManager {
 
   private final SparseArray<TdApi.File> activeFiles = new SparseArray<>();
   private final SparseLongArray lastUpdateTime = new SparseLongArray();
+  private final java.util.HashSet<Integer> countedIds = new java.util.HashSet<>();
   private final Handler handler = new Handler(Looper.getMainLooper());
   private Runnable dismissRunnable;
 
-  // Total e enviados para calcular faltando
   private int totalStarted = 0;
   private int totalCompleted = 0;
   private boolean sessionActive = false;
@@ -62,8 +62,8 @@ public class UploadNotificationManager {
       totalCompleted++;
 
       if (activeFiles.size() == 0) {
+        countedIds.clear();
         showDoneNotification(ctx, nm);
-        // Reset sessão
         totalStarted = 0;
         totalCompleted = 0;
         sessionActive = false;
@@ -83,9 +83,13 @@ public class UploadNotificationManager {
       if (!sessionActive) {
         totalStarted = 0;
         totalCompleted = 0;
+        countedIds.clear();
         sessionActive = true;
       }
-      totalStarted++;
+      if (!countedIds.contains(file.id)) {
+        countedIds.add(file.id);
+        totalStarted++;
+      }
     }
 
     activeFiles.put(file.id, file);
