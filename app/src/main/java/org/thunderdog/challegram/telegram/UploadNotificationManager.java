@@ -84,11 +84,15 @@ public class UploadNotificationManager {
 
   private void startService (Context ctx) {
     if (!UploadService.running) {
-      Intent intent = new Intent(ctx, UploadService.class);
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        ctx.startForegroundService(intent);
-      } else {
-        ctx.startService(intent);
+      try {
+        Intent intent = new Intent(ctx, UploadService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          ctx.startForegroundService(intent);
+        } else {
+          ctx.startService(intent);
+        }
+      } catch (Throwable t) {
+        // Android 15 bloqueia foreground service em background, ignora
       }
     }
   }
