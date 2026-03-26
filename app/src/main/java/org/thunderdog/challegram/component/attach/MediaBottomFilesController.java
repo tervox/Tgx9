@@ -141,16 +141,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         } else if (optionId == R.id.btn_refresh) {
           refreshCurrentFolder();
         } else if (optionId == R.id.btn_toggleHidden) {
-          if (!showHiddenFiles && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            if (!android.os.Environment.isExternalStorageManager()) {
-              android.content.Intent intent = new android.content.Intent(
-                android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                android.net.Uri.parse("package:" + context.getPackageName())
-              );
-              context.startActivity(intent);
-              return true;
-            }
-          }
           showHiddenFiles = !showHiddenFiles;
           refreshCurrentFolder();
         }
@@ -1072,11 +1062,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           final File dir = new File(path);
           if (!dir.exists() || !dir.isDirectory()) {
             openAlert(this, R.string.AppName, R.string.FolderDoesNotExist);
-            return null;
-          }
-
-          if (!dir.canRead()) {
-            openAlert(this, R.string.AppName, R.string.AccessError);
             return null;
           }
 
