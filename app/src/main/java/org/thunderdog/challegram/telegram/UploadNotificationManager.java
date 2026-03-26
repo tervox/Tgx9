@@ -120,21 +120,27 @@ public class UploadNotificationManager {
     NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
     if (nm == null) return;
 
+    // Cancela dismiss pendente se novo upload começou
+    if (dismissRunnable != null) {
+      handler.removeCallbacks(dismissRunnable);
+      dismissRunnable = null;
+    }
+
     if (isDone && !isUploading) {
-      if (activeFiles.get(file.id) == null) return;
+      if (!everSeenIds.contains(file.id)) return;
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
-      // Garante que foi contado antes de completar
-      if (countedIds.contains(file.id)) {
+      if (!countedIds.contains(file.id)) {
+        countedIds.add(file.id);
         totalCompleted++;
       }
-
       if (activeFiles.size() == 0) {
-        countedIds.clear();
         int completed = totalCompleted;
         totalStarted = 0;
         totalCompleted = 0;
         sessionActive = false;
+        everSeenIds.clear();
+        countedIds.clear();
         stopService(ctx);
         showDoneNotification(ctx, nm, completed);
       } else {
@@ -143,24 +149,18 @@ public class UploadNotificationManager {
       return;
     }
 
-    if (activeFiles.get(file.id) == null) {
-      if (dismissRunnable != null) {
-        handler.removeCallbacks(dismissRunnable);
-        dismissRunnable = null;
-      }
-      if (!sessionActive) {
-        totalStarted = 0;
-        totalCompleted = 0;
-        countedIds.clear();
-        everSeenIds.clear();
-        sessionActive = true;
-        startService(ctx);
-      }
-      if (!everSeenIds.contains(file.id)) {
-        everSeenIds.add(file.id);
-        countedIds.add(file.id);
-        totalStarted++;
-      }
+    if (!sessionActive) {
+      totalStarted = 0;
+      totalCompleted = 0;
+      everSeenIds.clear();
+      countedIds.clear();
+      sessionActive = true;
+      startService(ctx);
+    }
+
+    if (!everSeenIds.contains(file.id)) {
+      everSeenIds.add(file.id);
+      totalStarted++;
     }
 
     activeFiles.put(file.id, file);

@@ -189,3 +189,15 @@ if old_m4v in td:
     print("OK: .m4v renomeado para .mp4")
 else:
     print("SKIP: pattern not found")
+
+# ── Remover aviso versão experimental ────────────────────────────────────────
+gradle_path = 'tgx/app/build.gradle.kts'
+gradle = open(gradle_path).read()
+old_exp = 'buildConfigField("boolean", "EXPERIMENTAL", config.isExperimentalBuild.toString())'
+new_exp = 'buildConfigField("boolean", "EXPERIMENTAL", "false")'
+if old_exp in gradle:
+    gradle = gradle.replace(old_exp, new_exp)
+    open(gradle_path, 'w').write(gradle)
+    print("OK: EXPERIMENTAL=false")
+else:
+    print("SKIP: pattern not found")
