@@ -1,5 +1,6 @@
-package org.thunderdog.challegram.telegram;
+
 import androidx.core.app.NotificationCompat;
+package org.thunderdog.challegram.telegram;
 
 import android.app.Notification;
 import android.app.NotificationManager;
