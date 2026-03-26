@@ -919,7 +919,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             if (dirs == null) continue;
             for (java.io.File dir : dirs) {
               if (!dir.isDirectory()) continue;
-              if (dir.getName().startsWith(".")) continue;
+              if (dir.getName().startsWith("DUMMY_IGNORE")) continue;
               java.io.File nomedia = new java.io.File(dir, ".nomedia");
               if (!nomedia.exists()) continue;
               java.io.File[] files = dir.listFiles();
@@ -1200,7 +1200,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
                     File f = new File(filePath);
                     // Só arquivos diretos (não subpastas)
                     if (f.getParentFile() != null && f.getParentFile().getAbsolutePath().equals(path)) {
-                      if (!f.getName().startsWith(".")) filesList.add(f);
+                      if (!f.getName().startsWith("DUMMY_IGNORE")) filesList.add(f);
                     }
                   }
                 }
@@ -1212,7 +1212,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             File[] files = dir.listFiles();
             if (files == null) files = new File[0];
             for (File f : files) {
-              if (f.getName().startsWith(".")) continue;
+              if (f.getName().startsWith("DUMMY_IGNORE")) continue;
               filesList.add(f);
             }
           }
