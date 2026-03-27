@@ -127,9 +127,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       strings.append(R.string.Refresh);
       icons.append(R.drawable.baseline_file_download_24);
 
-      ids.append(R.id.btn_toggleHidden);
-      strings.append(showHiddenFiles ? R.string.HideHiddenFiles : R.string.ShowHiddenFiles);
-      icons.append(R.drawable.baseline_visibility_24);
+
 
       showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
         if (optionId == R.id.btn_selectAll) {
@@ -140,9 +138,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           showSortOptions();
         } else if (optionId == R.id.btn_refresh) {
           refreshCurrentFolder();
-        } else if (optionId == R.id.btn_toggleHidden) {
-          showHiddenFiles = !showHiddenFiles;
-          refreshCurrentFolder();
         }
         return true;
       });
@@ -151,8 +146,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   // Ordenação: 0=data desc (padrão), 1=nome asc, 2=nome desc, 3=tipos asc, 4=tipos desc
   private int sortMode = 0;
-  private boolean showHiddenFiles = false;
-
   private void refreshCurrentFolder () {
     if (!stack.isEmpty()) {
       String currentPath = stack.get(stack.size() - 1).path;
@@ -1065,13 +1058,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             return null;
           }
 
-          boolean isHiddenFolder = showHiddenFiles && (
-            path.startsWith("/sdcard/Pictures") ||
-            path.startsWith("/sdcard/Download/1DMP") ||
-            path.startsWith("/storage/emulated/0/Pictures") ||
-            path.startsWith("/storage/emulated/0/Download/1DMP")
-          );
-
           ArrayList<File> filesList = new ArrayList<>();
 
           if (isHiddenFolder) {
@@ -1100,13 +1086,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             } finally {
               if (cursor != null) cursor.close();
             }
-          } else {
-            File[] files = dir.listFiles();
-            if (files == null) files = new File[0];
-            for (File f : files) {
-              if (!showHiddenFiles && f.getName().startsWith(".")) continue;
-              filesList.add(f);
-            }
+          File[] files = dir.listFiles();
+          if (files == null) files = new File[0];
+          for (File f : files) {
+            if (f.getName().startsWith(".")) continue;
+            filesList.add(f);
           }
           Collections.sort(filesList, MediaBottomFilesController.this);
 
