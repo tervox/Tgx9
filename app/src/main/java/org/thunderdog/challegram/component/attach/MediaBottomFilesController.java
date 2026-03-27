@@ -315,7 +315,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             } else {
                 final String path = uri.toString();
               TD.createInputFile(path, null, fileInfo);
-              results.add(createItem(context, tdlib, new File(path), R.drawable.baseline_insert_drive_file_24, fileInfo.title, Strings.buildSize(fileInfo.knownSize)));
+              results.add(createItem(context, tdlib, path, R.drawable.baseline_insert_drive_file_24, fileInfo.title, Strings.buildSize(fileInfo.knownSize)));
             }
           }
           UI.post(() -> mediaLayout.getFilesControllerDelegate().onFilesSelected(results, false));
