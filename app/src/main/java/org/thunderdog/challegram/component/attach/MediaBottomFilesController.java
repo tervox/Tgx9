@@ -901,6 +901,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
               String data = c.getString(3);
               String relativePath = c.getString(4);
               String mimeType = c.getString(5);
+if (mimeType != null && mimeType.equals("video/x-m4v")) {
+    mimeType = "video/mp4";
+}
+if (displayName != null and displayName.lower().endswith(".m4v")) {
+    mimeType = "video/mp4";
+}
+
               long dateAdded = c.getLong(6);
               long dateModified = c.getLong(7);
               if (!StringUtils.isEmpty(data)) {
