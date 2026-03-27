@@ -304,6 +304,12 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           for (Uri uri : uris) {
             String filePath = U.tryResolveFilePath(uri);
             if (!StringUtils.isEmpty(filePath) && U.canReadFile(filePath)) {
+              if (filePath.toLowerCase().endsWith(".m4v")) {
+                java.io.File src = new java.io.File(filePath);
+                java.io.File dst = new java.io.File(filePath.substring(0, filePath.length() - 4) + "_tgx.mp4");
+                if (!dst.exists()) src.renameTo(dst);
+                if (dst.exists()) filePath = dst.getAbsolutePath();
+              }
               results.add(createItem(context, tdlib, new File(filePath), null));
             } else {
                 final String path = uri.toString();
