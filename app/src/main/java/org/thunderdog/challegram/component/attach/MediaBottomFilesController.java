@@ -157,6 +157,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     if (!stack.isEmpty()) {
       String currentPath = stack.get(stack.size() - 1).path;
       if (currentPath.startsWith(KEY_FOLDER)) {
+        String folderPath = currentPath.substring(KEY_FOLDER.length());
         cancelCurrentLoadOperation();
         LoadOperation operation = buildFolder(folderPath, getLastPath(2));
         this.currentLoadOperation = operation;
@@ -312,60 +313,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             if (!StringUtils.isEmpty(filePath) && U.canReadFile(filePath)) {
               results.add(createItem(context, tdlib, new File(filePath), null));
             } else {
-              String path = uri.toString();
-            if (path != null && path.toLowerCase().endsWith(".m4v")) {
-                try {
-                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
-                    // Tenta copiar streams sem reencode (melhor qualidade)
-                    String[] cmd = {
-                        "ffmpeg", "-i", path,
-                        "-c:v", "copy", "-c:a", "copy",           // tenta copiar sem reencode
-                        "-movflags", "+faststart", "-y", outPath
-                    };
-                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
-                    int exitCode = p.waitFor();
-
-                    if (exitCode != 0 || !new java.io.File(outPath).exists()) {
-                        // Se copy falhar (codec incompatível), faz reencode leve
-                        String[] cmd2 = {
-                            "ffmpeg", "-i", path,
-                            "-c:v", "libx264", "-crf", "17", "-preset", "slow",
-                            "-c:a", "aac", "-b:a", "192k",
-                            "-movflags", "+faststart",
-                            "-vf", "scale=iw:ih", "-y", outPath
-                        };
-                        p = Runtime.getRuntime().exec(cmd2);
-                        p.waitFor();
-                    }
-                    if (new java.io.File(outPath).exists()) {
-                        path = outPath;
-                    }
-                } catch (Throwable ignored) {
-                    // fallback simples
-                    if (path.toLowerCase().endsWith(".m4v")) {
-                        path = path.substring(0, path.length() - 4) + ".mp4";
-                    }
-                }
-            }
-
-            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
-            if (path != null && path.toLowerCase().endsWith(".m4v")) {
-                try {
-                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
-                    String[] cmd = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium",
-                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-                                    "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
-                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
-                    p.waitFor();
-                    if (new java.io.File(outPath).exists()) {
-                        path = outPath;
-                    }
-                } catch (Throwable ignored) {
-                    // fallback: só renomeia
-                    path = path.substring(0, path.length() - 4) + ".mp4";
-                }
-            }
-
+                final String path = uri.toString();
               TD.createInputFile(path, null, fileInfo);
               results.add(createItem(context, tdlib, path, R.drawable.baseline_insert_drive_file_24, fileInfo.title, Strings.buildSize(fileInfo.knownSize)));
             }
@@ -449,35 +397,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       } else if (KEY_BUCKET.equals(currentPath)) {
         operation = buildBucket(data);
       } else if (currentPath.startsWith(KEY_FOLDER)) {
-                try {
-                    // Tenta copiar streams sem reencode (melhor qualidade)
-                    String[] cmd = {
-                        "-c:v", "copy", "-c:a", "copy",           // tenta copiar sem reencode
-                    };
-
-                        // Se copy falhar (codec incompatível), faz reencode leve
-                        String[] cmd2 = {
-                            "-c:v", "libx264", "-crf", "17", "-preset", "slow",
-                            "-c:a", "aac", "-b:a", "192k",
-                            "-movflags", "+faststart",
-                        };
-                    }
-                    }
-                } catch (Throwable ignored) {
-                    // fallback simples
-                    }
-                }
-            }
-
-            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
-                try {
-                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-                    }
-                } catch (Throwable ignored) {
-                    // fallback: só renomeia
-                }
-            }
-
+        String path = currentPath.substring(KEY_FOLDER.length());
         operation = buildFolder(path, parentPath);
         String internalPath = UI.getAppContext().getFilesDir().getPath();
         File external = UI.getAppContext().getExternalFilesDir(null);
@@ -1172,7 +1092,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
                     File f = new File(filePath);
                     // Só arquivos diretos (não subpastas)
                     if (f.getParentFile() != null && f.getParentFile().getAbsolutePath().equals(path)) {
-                      if (!f.getName().startsWith("DUMMY_IGNORE")) filesList.add(f);
+                      if (!f.getName().equals(".nomedia")) filesList.add(f);
                     }
                   }
                 }
@@ -1184,7 +1104,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             File[] files = dir.listFiles();
             if (files == null) files = new File[0];
             for (File f : files) {
-              if (f.getName().startsWith("DUMMY_IGNORE")) continue;
+              if (!showHiddenFiles && f.getName().startsWith(".")) continue;
               filesList.add(f);
             }
           }
