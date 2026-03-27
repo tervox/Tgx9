@@ -1066,7 +1066,7 @@ if (displayName != null and displayName.lower().endswith(".m4v")) {
       @Override
       public Result act () {
         try {
-          final File dir = new File(path);
+          final File dir = path;
           if (!dir.exists() || !dir.isDirectory()) {
             openAlert(this, R.string.AppName, R.string.FolderDoesNotExist);
             return null;
