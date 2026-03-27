@@ -1,5 +1,3 @@
-package org.thunderdog.challegram.telegram;
-import androidx.core.app.NotificationCompat;
 
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -24,9 +22,7 @@ import org.thunderdog.challegram.tool.UI;
 
 public class UploadNotificationManager {
 
-  private static final String CHANNEL_ID = "upload_progress";
-  private static final int NOTIF_ID = 55000;
-  private static final long UPDATE_INTERVAL_MS = 500;
+  private static final S  private static final long UPDATE_INTERVAL_MS = 500;
   private static final long DONE_DISMISS_MS = 4000;
 
   private static UploadNotificationManager instance;
@@ -128,10 +124,7 @@ public class UploadNotificationManager {
     }
 
     if (isDone && !isUploading) {
-      if (!everSeenIds.contains(file.id)) {
-        everSeenIds.add(file.id);
-        totalStarted++;
-      }
+      if (!everSeenIds.contains(file.id)) return;
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
       if (!countedIds.contains(file.id)) {
@@ -153,7 +146,7 @@ public class UploadNotificationManager {
       return;
     }
 
-    if (!sessionActive && (isUploading || !isDone)) {
+    if (!sessionActive) {
       totalStarted = 0;
       totalCompleted = 0;
       everSeenIds.clear();
@@ -215,58 +208,25 @@ public class UploadNotificationManager {
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
     int faltam = totalStarted - totalCompleted;
-    int current = Math.min(totalStarted, totalCompleted + 1);
     String title = faltam > 1
-      ? "Faltam " + faltam + " de " + totalStarted + " arquivos"
-      : "Enviando arquivo " + current + " de " + totalStarted + "...";
+      ? "Faltam " + faltam + " de " + totalStarted + " arquivo(s)"
+      : "Enviando arquivo " + totalCompleted + " de " + totalStarted + "...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
-    nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
-      android.R.drawable.stat_sys_upload, true, 100, progress));
-  }
-
-  private void showDoneNotification (Context ctx, NotificationManager nm, int completed) {
-    String title = "✅ Envio concluído!";
-    String text = completed + " arquivo(s) enviado(s) com sucesso";
-    nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
-      android.R.drawable.stat_sys_upload_done, false, 0, 0));
-
+    nm.notify(NOTIF_ID, buildNotif(ctx, title, t
+      android.R.drawable.stat_sys_upload, true, 100, prog
+  private void showDoneNotification (Cotext ctx, NotificationManager nm, int completed) {
+    String title = "✅ Envio concluído!
+    String text = completed (s) envado(s) com sucesso";
+    nm.notify(NOTIF_ID, buildNotif(ctx, title, 
+      android.R.drawable.stat_sys_upload_done, false, 0, 0))
     dismissRunnable = () -> {
-      nm.cancel(NOTIF_ID);
+      nm.canel(NOTIF_ID);
       dismissRunnable = null;
     };
-    handler.postDelayed(dismissRunnable, DONE_DISMISS_MS);
-  }
-
-  private Notification buildNotif (Context ctx, String title, String text,
+    handler.pstDelayed(dintext ctx, String title, String text,
       int icon, boolean ongoing, int progressMax, int progress) {
-    String channelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
+    String chanelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
     Intent openIntent = new Intent(ctx, MainActivity.class);
     openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-    int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-      ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-      : PendingIntent.FLAG_UPDATE_CURRENT;
-    PendingIntent pi = PendingIntent.getActivity(ctx, 0, openIntent, piFlags);
-
-    NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, channelId)
-      .setSmallIcon(icon)
-      .setContentTitle(title)
-      .setContentText(text)
-      .setOngoing(ongoing)
-      .setOnlyAlertOnce(true)
-      .setAutoCancel(!ongoing)
-      .setContentIntent(pi)
-      .setPriority(NotificationCompat.PRIORITY_LOW);
-
-    if (progressMax > 0) {
-      builder.setProgress(progressMax, progress, false);
-    }
-    return builder.build();
-  }
-
-  private static String formatSize (long bytes) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
-    return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
-  }
-}
+    int piF
