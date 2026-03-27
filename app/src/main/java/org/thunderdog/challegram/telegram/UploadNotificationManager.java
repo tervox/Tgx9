@@ -29,6 +29,7 @@ public class UploadNotificationManager {
   private static final long DONE_DISMISS_MS = 4000;
 
   private static UploadNotificationManager instance;
+
   public static UploadNotificationManager instance () {
     if (instance == null) instance = new UploadNotificationManager();
     return instance;
@@ -36,16 +37,15 @@ public class UploadNotificationManager {
 
   private final SparseArray<TdApi.File> activeFiles = new SparseArray<>();
   private final SparseLongArray lastUpdateTime = new SparseLongArray();
-  private final java.util.HashSet<Integer> seenIds = new java.util.HashSet<>();
+  private final java.util.HashSet<Integer> countedIds = new java.util.HashSet<>();
+  private final java.util.HashSet<Integer> everSeenIds = new java.util.HashSet<>();
   private final Handler handler = new Handler(Looper.getMainLooper());
   private Runnable dismissRunnable;
-  private Runnable timeoutRunnable;
 
-  private int totalFiles = 0;
-  private int doneFiles = 0;
+  private int totalStarted = 0;
+  private int totalCompleted = 0;
   private boolean sessionActive = false;
 
-  // ── Foreground Service ────────────────────────────────────────────────────
   public static class UploadService extends Service {
     public static boolean running = false;
 
@@ -77,10 +77,15 @@ public class UploadNotificationManager {
     }
 
     @Override
-    public void onDestroy () { running = false; super.onDestroy(); }
+    public void onDestroy () {
+      running = false;
+      super.onDestroy();
+    }
 
     @Override
-    public IBinder onBind (Intent intent) { return null; }
+    public IBinder onBind (Intent intent) {
+      return null;
+    }
   }
 
   private void startService (Context ctx) {
@@ -92,7 +97,9 @@ public class UploadNotificationManager {
         } else {
           ctx.startService(intent);
         }
-      } catch (Throwable ignored) {}
+      } catch (Throwable t) {
+        // Android 15 bloqueia foreground service em background
+      }
     }
   }
 
@@ -100,7 +107,6 @@ public class UploadNotificationManager {
     ctx.stopService(new Intent(ctx, UploadService.class));
   }
 
-  // ── Upload tracking ───────────────────────────────────────────────────────
   public void onFileUpdate (TdApi.UpdateFile update) {
     TdApi.File file = update.file;
     Context ctx = UI.getAppContext();
@@ -120,16 +126,25 @@ public class UploadNotificationManager {
     }
 
     if (isDone && !isUploading) {
-      if (!seenIds.contains(file.id)) return;
+      // Garante que arquivos que completam sem ter passado pelo isUploading sejam contados
+      if (!everSeenIds.contains(file.id)) {
+        everSeenIds.add(file.id);
+        totalStarted++;
+      }
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
-      doneFiles++;
-
-      cancelTimeout();
-
+      if (!countedIds.contains(file.id)) {
+        countedIds.add(file.id);
+        totalCompleted++;
+      }
       if (activeFiles.size() == 0) {
-        int completed = doneFiles;
-        resetSession();
+        int completed = totalCompleted;
+        totalStarted = 0;
+        totalCompleted = 0;
+        sessionActive = false;
+        everSeenIds.clear();
+        countedIds.clear();
+        handler.removeCallbacksAndMessages("timeout");
         stopService(ctx);
         showDoneNotification(ctx, nm, completed);
       } else {
@@ -139,14 +154,18 @@ public class UploadNotificationManager {
       return;
     }
 
-    // Arquivo novo ou reativado
-    if (!seenIds.contains(file.id)) {
-      seenIds.add(file.id);
+    // Novo arquivo iniciando upload
+    if (!everSeenIds.contains(file.id)) {
       if (!sessionActive) {
+        totalStarted = 0;
+        totalCompleted = 0;
+        everSeenIds.clear();
+        countedIds.clear();
         sessionActive = true;
         startService(ctx);
       }
-      totalFiles++;
+      everSeenIds.add(file.id);
+      totalStarted++;
     }
 
     activeFiles.put(file.id, file);
@@ -161,32 +180,25 @@ public class UploadNotificationManager {
   }
 
   private void scheduleTimeout (Context ctx, NotificationManager nm) {
-    cancelTimeout();
-    timeoutRunnable = () -> {
-      if (sessionActive) {
-        int completed = doneFiles + activeFiles.size();
-        resetSession();
-        stopService(ctx);
-        showDoneNotification(ctx, nm, completed);
+    handler.removeCallbacksAndMessages("timeout");
+    handler.postAtTime(() -> {
+      if (sessionActive && activeFiles.size() > 0) {
+        Context c = UI.getAppContext();
+        if (c == null) return;
+        NotificationManager n = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (n == null) return;
+        int completed = totalCompleted + activeFiles.size();
+        countedIds.clear();
+        everSeenIds.clear();
+        activeFiles.clear();
+        lastUpdateTime.clear();
+        totalStarted = 0;
+        totalCompleted = 0;
+        sessionActive = false;
+        stopService(c);
+        showDoneNotification(c, n, completed);
       }
-    };
-    handler.postDelayed(timeoutRunnable, 30000);
-  }
-
-  private void cancelTimeout () {
-    if (timeoutRunnable != null) {
-      handler.removeCallbacks(timeoutRunnable);
-      timeoutRunnable = null;
-    }
-  }
-
-  private void resetSession () {
-    totalFiles = 0;
-    doneFiles = 0;
-    sessionActive = false;
-    seenIds.clear();
-    activeFiles.clear();
-    lastUpdateTime.clear();
+    }, "timeout", android.os.SystemClock.uptimeMillis() + 30000);
   }
 
   private void showProgressNotification (Context ctx, NotificationManager nm) {
@@ -205,9 +217,9 @@ public class UploadNotificationManager {
     long uploaded = currentFile.remote.uploadedSize;
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
-    int remaining = totalFiles - doneFiles;
-    String title = remaining > 1
-      ? "Faltam " + remaining + " de " + totalFiles + " arquivo(s)"
+    int faltam = totalStarted - totalCompleted;
+    String title = faltam > 1
+      ? "Faltam " + faltam + " de " + totalStarted + " arquivo(s)"
       : "Enviando último arquivo...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
