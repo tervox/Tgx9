@@ -1059,7 +1059,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       @Override
       public Result act () {
         try {
-          final File dir = path;
+          final File dir = new File(path);
           if (!dir.exists() || !dir.isDirectory()) {
             openAlert(this, R.string.AppName, R.string.FolderDoesNotExist);
             return null;
