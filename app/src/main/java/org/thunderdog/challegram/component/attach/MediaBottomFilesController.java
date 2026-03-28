@@ -127,7 +127,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       strings.append(R.string.Refresh);
       icons.append(R.drawable.baseline_file_download_24);
 
-
+      ids.append(R.id.btn_toggleHidden);
+      strings.append(showHiddenFiles ? R.string.HideHiddenFiles : R.string.ShowHiddenFiles);
+      icons.append(R.drawable.baseline_visibility_24);
 
       showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
         if (optionId == R.id.btn_selectAll) {
@@ -138,6 +140,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           showSortOptions();
         } else if (optionId == R.id.btn_refresh) {
           refreshCurrentFolder();
+        } else if (optionId == R.id.btn_toggleHidden) {
+          showHiddenFiles = !showHiddenFiles;
+          refreshCurrentFolder();
         }
         return true;
       });
@@ -146,6 +151,8 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   // Ordenação: 0=data desc (padrão), 1=nome asc, 2=nome desc, 3=tipos asc, 4=tipos desc
   private int sortMode = 0;
+  private boolean showHiddenFiles = false;
+
   private void refreshCurrentFolder () {
     if (!stack.isEmpty()) {
       String currentPath = stack.get(stack.size() - 1).path;
@@ -202,7 +209,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     String name = f.getName().toLowerCase();
     if (name.endsWith(".gif")) return 2;
     if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".bmp") || name.endsWith(".heic")) return 0;
-    if (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".mov") || name.endsWith(".avi") || name.endsWith(".webm") || name.endsWith(".flv") || name.endsWith(".wmv") || name.endsWith(".mp4") || name.endsWith(".3gp")) return 1;
+    if (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".mov") || name.endsWith(".avi") || name.endsWith(".webm") || name.endsWith(".flv") || name.endsWith(".wmv") || name.endsWith(".mp4") || name.endsWith(".3gp") || name.endsWith(".m4v")) return 1;
     if (name.endsWith(".mp3") || name.endsWith(".m4a") || name.endsWith(".aac") || name.endsWith(".ogg") || name.endsWith(".wav") || name.endsWith(".flac")) return 3;
     return 4;
   }
@@ -304,12 +311,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           for (Uri uri : uris) {
             String filePath = U.tryResolveFilePath(uri);
             if (!StringUtils.isEmpty(filePath) && U.canReadFile(filePath)) {
-              if (filePath.toLowerCase().endsWith(".m4v")) {
-                java.io.File src = new java.io.File(filePath);
-                java.io.File dst = new java.io.File(filePath.substring(0, filePath.length() - 4) + "_tgx.mp4");
-                if (!dst.exists()) src.renameTo(dst);
-                if (dst.exists()) filePath = dst.getAbsolutePath();
-              }
               results.add(createItem(context, tdlib, new File(filePath), null));
             } else {
                 final String path = uri.toString();
@@ -1064,6 +1065,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             return null;
           }
 
+          boolean isHiddenFolder = showHiddenFiles && (
+            path.startsWith("/sdcard/Pictures") ||
+            path.startsWith("/sdcard/Download/1DMP") ||
+            path.startsWith("/storage/emulated/0/Pictures") ||
+            path.startsWith("/storage/emulated/0/Download/1DMP")
+          );
+
           ArrayList<File> filesList = new ArrayList<>();
 
           if (isHiddenFolder) {
@@ -1092,11 +1100,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             } finally {
               if (cursor != null) cursor.close();
             }
-          File[] files = dir.listFiles();
-          if (files == null) files = new File[0];
-          for (File f : files) {
-            if (f.getName().startsWith(".")) continue;
-            filesList.add(f);
+          } else {
+            File[] files = dir.listFiles();
+            if (files == null) files = new File[0];
+            for (File f : files) {
+              if (!showHiddenFiles && f.getName().startsWith(".")) continue;
+              filesList.add(f);
+            }
           }
           Collections.sort(filesList, MediaBottomFilesController.this);
 
@@ -1318,6 +1328,28 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         if (inFileSelectMode) {
           selectItem(item, result);
         } else {
+          String path = result.getId();
+          if (path != null && path.toLowerCase().endsWith(".m4v")) {
+            try {
+              String outPath = path.substring(0, path.length() - 4) + ".mp4";
+              String[] cmd = {"ffmpeg", "-i", path, "-c:v", "copy", "-c:a", "copy", "-movflags", "+faststart", "-y", outPath};
+              java.lang.Process p = Runtime.getRuntime().exec(cmd);
+              if (p.waitFor() != 0 || !new java.io.File(outPath).exists()) {
+                String[] cmd2 = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
+                p = Runtime.getRuntime().exec(cmd2);
+                p.waitFor();
+              }
+              if (new java.io.File(outPath).exists()) {
+                result = new InlineResultCommon(context(), tdlib, new java.io.File(outPath), result.getTitle(), result.getSubtitle(), result.getTag(), false);
+              }
+            } catch (Throwable ignored) {
+              java.io.File oldFile = new java.io.File(path);
+              java.io.File newFile = new java.io.File(path.substring(0, path.length() - 4) + ".mp4");
+              if (oldFile.renameTo(newFile)) {
+                result = new InlineResultCommon(context(), tdlib, newFile, result.getTitle(), result.getSubtitle(), result.getTag(), false);
+              }
+            }
+          }
           mediaLayout.getFilesControllerDelegate().onFilesSelected(new ArrayList<>(Collections.singleton(result)), false);
         }
       } else if (itemId == R.id.btn_bucket) {

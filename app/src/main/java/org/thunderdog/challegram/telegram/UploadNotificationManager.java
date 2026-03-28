@@ -1,4 +1,5 @@
 package org.thunderdog.challegram.telegram;
+import androidx.core.app.NotificationCompat;
 
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -98,7 +99,7 @@ public class UploadNotificationManager {
           ctx.startService(intent);
         }
       } catch (Throwable t) {
-        // Android 15 bloqueia foreground service em background
+        // Android 15 bloqueia foreground service em background, ignora
       }
     }
   }
@@ -120,13 +121,13 @@ public class UploadNotificationManager {
     NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
     if (nm == null) return;
 
+    // Cancela dismiss pendente se novo upload começou
     if (dismissRunnable != null) {
       handler.removeCallbacks(dismissRunnable);
       dismissRunnable = null;
     }
 
     if (isDone && !isUploading) {
-      // Garante que arquivos que completam sem ter passado pelo isUploading sejam contados
       if (!everSeenIds.contains(file.id)) {
         everSeenIds.add(file.id);
         totalStarted++;
@@ -144,26 +145,24 @@ public class UploadNotificationManager {
         sessionActive = false;
         everSeenIds.clear();
         countedIds.clear();
-        handler.removeCallbacksAndMessages("timeout");
         stopService(ctx);
         showDoneNotification(ctx, nm, completed);
       } else {
         showProgressNotification(ctx, nm);
-        scheduleTimeout(ctx, nm);
       }
       return;
     }
 
-    // Novo arquivo iniciando upload
+    if (!sessionActive && (isUploading || !isDone)) {
+      totalStarted = 0;
+      totalCompleted = 0;
+      everSeenIds.clear();
+      countedIds.clear();
+      sessionActive = true;
+      startService(ctx);
+    }
+
     if (!everSeenIds.contains(file.id)) {
-      if (!sessionActive) {
-        totalStarted = 0;
-        totalCompleted = 0;
-        everSeenIds.clear();
-        countedIds.clear();
-        sessionActive = true;
-        startService(ctx);
-      }
       everSeenIds.add(file.id);
       totalStarted++;
     }
@@ -176,10 +175,8 @@ public class UploadNotificationManager {
     lastUpdateTime.put(file.id, now);
 
     showProgressNotification(ctx, nm);
-    scheduleTimeout(ctx, nm);
-  }
 
-  private void scheduleTimeout (Context ctx, NotificationManager nm) {
+    // Timeout: se não houver atualização por 8s, força concluído
     handler.removeCallbacksAndMessages("timeout");
     handler.postAtTime(() -> {
       if (sessionActive && activeFiles.size() > 0) {
@@ -218,9 +215,10 @@ public class UploadNotificationManager {
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
     int faltam = totalStarted - totalCompleted;
+    int current = Math.min(totalStarted, totalCompleted + 1);
     String title = faltam > 1
-      ? "Faltam " + faltam + " de " + totalStarted + " arquivo(s)"
-      : "Enviando último arquivo...";
+      ? "Faltam " + faltam + " de " + totalStarted + " arquivos"
+      : "Enviando arquivo " + current + " de " + totalStarted + "...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
     nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
