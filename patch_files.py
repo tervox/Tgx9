@@ -138,3 +138,20 @@ if changed:
 
 # ── Register UploadService ────────────────────────────────────────────────────
 print('patch_files.py done!')
+
+# ── Forcar .m4v como video/mp4 no TD.java ────────────────────────────────────
+td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
+td = open(td_path).read()
+
+old_mime = '    if (!StringUtils.isEmpty(info.mimeType)) {'
+new_mime = '''    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {
+      info.mimeType = "video/mp4";
+    }
+    if (!StringUtils.isEmpty(info.mimeType)) {'''
+
+if old_mime in td:
+    td = td.replace(old_mime, new_mime, 1)
+    open(td_path, 'w').write(td)
+    print('OK: .m4v forcado como video/mp4')
+else:
+    print('SKIP: pattern not found')

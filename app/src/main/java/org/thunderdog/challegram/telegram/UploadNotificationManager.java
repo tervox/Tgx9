@@ -213,11 +213,10 @@ public class UploadNotificationManager {
     long uploaded = currentFile.remote.uploadedSize;
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
-    int faltam = totalStarted - totalCompleted;
-    int current = Math.min(totalStarted, totalCompleted + 1);
-    String title = faltam > 1
-      ? "Faltam " + faltam + " de " + totalStarted + " arquivos"
-      : "Enviando arquivo " + current + " de " + totalStarted + "...";
+    int ativos = activeFiles.size();
+    String title = ativos > 1
+      ? "Enviando " + ativos + " arquivo(s)..."
+      : "Enviando último arquivo...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
     nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
