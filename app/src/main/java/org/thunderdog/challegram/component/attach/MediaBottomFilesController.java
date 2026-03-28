@@ -1340,13 +1340,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
                 p.waitFor();
               }
               if (new java.io.File(outPath).exists()) {
-                result = new InlineResultCommon(context(), tdlib, new java.io.File(outPath), result.getTitle(), result.getSubtitle(), result.getTag(), false);
+                result = new InlineResultCommon(context, tdlib, new java.io.File(outPath), null).setDisableProgressInteract(true);
               }
             } catch (Throwable ignored) {
               java.io.File oldFile = new java.io.File(path);
               java.io.File newFile = new java.io.File(path.substring(0, path.length() - 4) + ".mp4");
               if (oldFile.renameTo(newFile)) {
-                result = new InlineResultCommon(context(), tdlib, newFile, result.getTitle(), result.getSubtitle(), result.getTag(), false);
+                result = new InlineResultCommon(context, tdlib, newFile, null).setDisableProgressInteract(true);
               }
             }
           }
