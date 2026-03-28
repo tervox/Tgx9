@@ -143,15 +143,27 @@ print('patch_files.py done!')
 td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
 td = open(td_path).read()
 
-old_mime = '    if (!StringUtils.isEmpty(info.mimeType)) {'
-new_mime = '''    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {
-      info.mimeType = "video/mp4";
-    }
-    if (!StringUtils.isEmpty(info.mimeType)) {'''
+old_m4v = '  public static TdApi.InputMessageContent toInputMessageContent (String filePath, TdApi.InputFile inputFile, @NonNull FileInfo info, TdApi.FormattedText caption, boolean allowAudio, boolean allowAnimation, boolean allowVideo, boolean allowDocs, boolean showCaptionAboveMedia, boolean hasSpoiler) {'
+new_m4v = '''  public static TdApi.InputMessageContent toInputMessageContent (String filePath, TdApi.InputFile inputFile, @NonNull FileInfo info, TdApi.FormattedText caption, boolean allowAudio, boolean allowAnimation, boolean allowVideo, boolean allowDocs, boolean showCaptionAboveMedia, boolean hasSpoiler) {
+    // Copia .m4v como .mp4 para forcar envio como video
+    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {
+      try {
+        java.io.File src = new java.io.File(filePath);
+        java.io.File dst = new java.io.File(filePath.substring(0, filePath.length() - 4) + "_tgx.mp4");
+        if (!dst.exists()) {
+          java.nio.file.Files.copy(src.toPath(), dst.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+        if (dst.exists()) {
+          filePath = dst.getAbsolutePath();
+          inputFile = createInputFile(filePath);
+          info.mimeType = "video/mp4";
+        }
+      } catch (Throwable ignored) {}
+    }'''
 
-if old_mime in td:
-    td = td.replace(old_mime, new_mime, 1)
+if old_m4v in td:
+    td = td.replace(old_m4v, new_m4v, 1)
     open(td_path, 'w').write(td)
-    print('OK: .m4v forcado como video/mp4')
+    print('OK: .m4v copiado como .mp4')
 else:
     print('SKIP: pattern not found')
