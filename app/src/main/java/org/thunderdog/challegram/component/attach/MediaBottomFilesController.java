@@ -1356,59 +1356,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         navigateInside(v, KEY_BUCKET, result);
       } else {
         String path = result.getId();
-            if (path != null && path.toLowerCase().endsWith(".m4v")) {
-                try {
-                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
-                    // Tenta copiar streams sem reencode (melhor qualidade)
-                    String[] cmd = {
-                        "ffmpeg", "-i", path,
-                        "-c:v", "copy", "-c:a", "copy",           // tenta copiar sem reencode
-                        "-movflags", "+faststart", "-y", outPath
-                    };
-                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
-                    int exitCode = p.waitFor();
-
-                    if (exitCode != 0 || !new java.io.File(outPath).exists()) {
-                        // Se copy falhar (codec incompatível), faz reencode leve
-                        String[] cmd2 = {
-                            "ffmpeg", "-i", path,
-                            "-c:v", "libx264", "-crf", "17", "-preset", "slow",
-                            "-c:a", "aac", "-b:a", "192k",
-                            "-movflags", "+faststart",
-                            "-vf", "scale=iw:ih", "-y", outPath
-                        };
-                        p = Runtime.getRuntime().exec(cmd2);
-                        p.waitFor();
-                    }
-                    if (new java.io.File(outPath).exists()) {
-                        path = outPath;
-                    }
-                } catch (Throwable ignored) {
-                    // fallback simples
-                    if (path.toLowerCase().endsWith(".m4v")) {
-                        path = path.substring(0, path.length() - 4) + ".mp4";
-                    }
-                }
-            }
-
-            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
-            if (path != null && path.toLowerCase().endsWith(".m4v")) {
-                try {
-                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
-                    String[] cmd = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium",
-                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-                                    "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
-                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
-                    p.waitFor();
-                    if (new java.io.File(outPath).exists()) {
-                        path = outPath;
-                    }
-                } catch (Throwable ignored) {
-                    // fallback: só renomeia
-                    path = path.substring(0, path.length() - 4) + ".mp4";
-                }
-            }
-
         boolean isMusic = KEY_MUSIC.equals(path);
         if (mediaLayout.getFilesControllerDelegate().showRestriction(v, isMusic ? RightId.SEND_AUDIO : RightId.SEND_DOCS)) {
           return;
