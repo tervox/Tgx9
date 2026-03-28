@@ -108,6 +108,17 @@ public class UploadNotificationManager {
     ctx.stopService(new Intent(ctx, UploadService.class));
   }
 
+  private int expectedTotal = 0;
+
+  public void setExpectedTotal (int total) {
+    this.expectedTotal = total;
+    this.totalStarted = 0;
+    this.totalCompleted = 0;
+    this.everSeenIds.clear();
+    this.countedIds.clear();
+    this.sessionActive = false;
+  }
+
   public void onFileUpdate (TdApi.UpdateFile update) {
     TdApi.File file = update.file;
     Context ctx = UI.getAppContext();
@@ -214,8 +225,10 @@ public class UploadNotificationManager {
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
     int ativos = activeFiles.size();
+    int total = expectedTotal > 0 ? expectedTotal : (totalStarted > 0 ? totalStarted : ativos);
+    int enviados = Math.max(0, total - ativos);
     String title = ativos > 1
-      ? "Enviando " + ativos + " arquivo(s)..."
+      ? "Faltam " + ativos + " de " + total + " arquivo(s)"
       : "Enviando último arquivo...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 

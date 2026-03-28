@@ -1324,6 +1324,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         }
         processedItems.add(item2);
       }
+      org.thunderdog.challegram.telegram.UploadNotificationManager.instance().setExpectedTotal(processedItems.size());
       mediaLayout.getFilesControllerDelegate().onFilesSelected(processedItems, true);
     }
     return true;
