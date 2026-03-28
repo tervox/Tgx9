@@ -153,16 +153,15 @@ public class UploadNotificationManager {
       return;
     }
 
-    if (!sessionActive && (isUploading || !isDone)) {
-      totalStarted = 0;
-      totalCompleted = 0;
-      everSeenIds.clear();
-      countedIds.clear();
-      sessionActive = true;
-      startService(ctx);
-    }
-
     if (!everSeenIds.contains(file.id)) {
+      if (!sessionActive) {
+        totalStarted = 0;
+        totalCompleted = 0;
+        everSeenIds.clear();
+        countedIds.clear();
+        sessionActive = true;
+        startService(ctx);
+      }
       everSeenIds.add(file.id);
       totalStarted++;
     }

@@ -1304,7 +1304,27 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private boolean onHapticMenuItemClick (View view, View parentView, HapticMenuHelper.MenuItem item) {
     final int id = view.getId();
     if (id == R.id.btn_addCaption) {
-      mediaLayout.getFilesControllerDelegate().onFilesSelected(new ArrayList<>(selectedItems), true);
+      // Renomeia .m4v para .mp4 antes de enviar em lote
+      ArrayList<InlineResult<?>> processedItems = new ArrayList<>();
+      for (InlineResult<?> item2 : selectedItems) {
+        if (item2 instanceof InlineResultCommon) {
+          InlineResultCommon common = (InlineResultCommon) item2;
+          String itemPath = common.getId();
+          if (itemPath != null && itemPath.toLowerCase().endsWith(".m4v")) {
+            try {
+              java.io.File src = new java.io.File(itemPath);
+              java.io.File dst = new java.io.File(itemPath.substring(0, itemPath.length() - 4) + "_tgx.mp4");
+              if (!dst.exists()) src.renameTo(dst);
+              if (dst.exists()) {
+                processedItems.add(createItem(context, tdlib, dst, null));
+                continue;
+              }
+            } catch (Throwable ignored) {}
+          }
+        }
+        processedItems.add(item2);
+      }
+      mediaLayout.getFilesControllerDelegate().onFilesSelected(processedItems, true);
     }
     return true;
   }
