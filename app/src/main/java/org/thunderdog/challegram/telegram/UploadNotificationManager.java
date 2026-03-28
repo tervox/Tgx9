@@ -225,10 +225,9 @@ public class UploadNotificationManager {
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
     int ativos = activeFiles.size();
-    int total = expectedTotal > 0 ? expectedTotal : (totalStarted > 0 ? totalStarted : ativos);
-    int enviados = Math.max(0, total - ativos);
+    int totalExp = expectedTotal > 0 ? expectedTotal : (totalStarted > 0 ? totalStarted : ativos);
     String title = ativos > 1
-      ? "Faltam " + ativos + " de " + total + " arquivo(s)"
+      ? "Faltam " + ativos + " de " + totalExp + " arquivo(s)"
       : "Enviando último arquivo...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
