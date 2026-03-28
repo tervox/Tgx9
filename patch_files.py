@@ -144,7 +144,7 @@ td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
 td = open(td_path).read()
 
 old_mime = '    if (!StringUtils.isEmpty(info.mimeType)) {'
-new_mime = '''    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {
+new_mime = '''    if (path != null && path.toLowerCase().endsWith(".m4v")) {
       info.mimeType = "video/mp4";
     }
     if (!StringUtils.isEmpty(info.mimeType)) {'''
