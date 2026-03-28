@@ -1329,28 +1329,17 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           selectItem(item, result);
         } else {
           String path = result.getId();
+          InlineResultCommon finalResult = result;
           if (path != null && path.toLowerCase().endsWith(".m4v")) {
             try {
-              String outPath = path.substring(0, path.length() - 4) + ".mp4";
-              String[] cmd = {"ffmpeg", "-i", path, "-c:v", "copy", "-c:a", "copy", "-movflags", "+faststart", "-y", outPath};
-              java.lang.Process p = Runtime.getRuntime().exec(cmd);
-              if (p.waitFor() != 0 || !new java.io.File(outPath).exists()) {
-                String[] cmd2 = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
-                p = Runtime.getRuntime().exec(cmd2);
-                p.waitFor();
-              }
-              if (new java.io.File(outPath).exists()) {
-                result = createItem(context, tdlib, new java.io.File(outPath), null);
-              }
-            } catch (Throwable ignored) {
-              java.io.File oldFile = new java.io.File(path);
-              java.io.File newFile = new java.io.File(path.substring(0, path.length() - 4) + ".mp4");
-              if (oldFile.renameTo(newFile)) {
-                result = createItem(context, tdlib, newFile, null);
-              }
-            }
+              java.io.File src = new java.io.File(path);
+              java.io.File dst = new java.io.File(path.substring(0, path.length() - 4) + "_tgx.mp4");
+              if (!dst.exists()) src.renameTo(dst);
+              if (dst.exists()) finalResult = createItem(context, tdlib, dst, null);
+            } catch (Throwable ignored) {}
           }
-          mediaLayout.getFilesControllerDelegate().onFilesSelected(new ArrayList<>(Collections.singleton(result)), false);
+          final InlineResultCommon sendResult = finalResult;
+          mediaLayout.getFilesControllerDelegate().onFilesSelected(new ArrayList<>(Collections.singleton(sendResult)), false);
         }
       } else if (itemId == R.id.btn_bucket) {
         navigateInside(v, KEY_BUCKET, result);
