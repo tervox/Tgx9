@@ -26,7 +26,7 @@ public class UploadNotificationManager {
 
   private static final String CHANNEL_ID = "upload_progress";
   private static final int NOTIF_ID = 55000;
-  private static final long UPDATE_INTERVAL_MS = 2000;
+  private static final long UPDATE_INTERVAL_MS = 500;
   private static final long DONE_DISMISS_MS = 4000;
 
   private static UploadNotificationManager instance;
@@ -108,17 +108,6 @@ public class UploadNotificationManager {
     ctx.stopService(new Intent(ctx, UploadService.class));
   }
 
-  private int expectedTotal = 0;
-
-  public void setExpectedTotal (int total) {
-    this.expectedTotal = total;
-    this.totalStarted = 0;
-    this.totalCompleted = 0;
-    this.everSeenIds.clear();
-    this.countedIds.clear();
-    this.sessionActive = false;
-  }
-
   public void onFileUpdate (TdApi.UpdateFile update) {
     TdApi.File file = update.file;
     Context ctx = UI.getAppContext();
@@ -164,15 +153,16 @@ public class UploadNotificationManager {
       return;
     }
 
+    if (!sessionActive && (isUploading || !isDone)) {
+      totalStarted = 0;
+      totalCompleted = 0;
+      everSeenIds.clear();
+      countedIds.clear();
+      sessionActive = true;
+      startService(ctx);
+    }
+
     if (!everSeenIds.contains(file.id)) {
-      if (!sessionActive) {
-        totalStarted = 0;
-        totalCompleted = 0;
-        everSeenIds.clear();
-        countedIds.clear();
-        sessionActive = true;
-        startService(ctx);
-      }
       everSeenIds.add(file.id);
       totalStarted++;
     }
@@ -224,11 +214,11 @@ public class UploadNotificationManager {
     long uploaded = currentFile.remote.uploadedSize;
     int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
 
-    int ativos = activeFiles.size();
-    int totalExp = expectedTotal > 0 ? expectedTotal : (totalStarted > 0 ? totalStarted : ativos);
-    String title = ativos > 1
-      ? "Faltam " + ativos + " de " + totalExp + " arquivo(s)"
-      : "Enviando último arquivo...";
+    int faltam = totalStarted - totalCompleted;
+    int current = Math.min(totalStarted, totalCompleted + 1);
+    String title = faltam > 1
+      ? "Faltam " + faltam + " de " + totalStarted + " arquivos"
+      : "Enviando arquivo " + current + " de " + totalStarted + "...";
     String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
 
     nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
