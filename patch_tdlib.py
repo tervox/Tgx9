@@ -5,7 +5,7 @@ content = open(path).read()
 old = '  private void updateFile (TdApi.UpdateFile update) {\n    listeners.updateFile(update);\n\n    // TODO\n\n    context.player()'
 new = ('  private void updateFile (TdApi.UpdateFile update) {\n'
        '    listeners.updateFile(update);\n\n'
-       '    UploadNotificationManager.instance().onFileUpdate(update, this);\n\n'
+       '    android.os.Handler hNotif = new android.os.Handler(android.os.Looper.getMainLooper()); hNotif.post(() -> UploadNotificationManager.instance().onFileUpdate(update, this));\n\n'
        '    context.player()')
 
 if old in content:
