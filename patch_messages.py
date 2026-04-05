@@ -69,8 +69,10 @@ new2 = '''          case TdApi.Error.CONSTRUCTOR: {
               final int retryDelay = (waitSecs + 1) * 1000;
               final int retryIndex = sentFunctionsCount[0];
               final Client.ResultHandler self = this;
-              android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
-              h.postDelayed(() -> tdlib.client().send(functions.get(retryIndex), self), retryDelay);
+              new Thread(() -> {
+                try { Thread.sleep(retryDelay); } catch (Throwable ignored) {}
+                tdlib.client().send(functions.get(retryIndex), self);
+              }).start();
             } else {
               tdlib.ui().post(() -> {
                 if (isFocused()) {
