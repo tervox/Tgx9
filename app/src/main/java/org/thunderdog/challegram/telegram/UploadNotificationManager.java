@@ -128,10 +128,6 @@ public class UploadNotificationManager {
     }
 
     if (isDone && !isUploading) {
-      if (!everSeenIds.contains(file.id)) {
-        everSeenIds.add(file.id);
-        totalStarted++;
-      }
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
       if (!countedIds.contains(file.id)) {
@@ -195,7 +191,7 @@ public class UploadNotificationManager {
         stopService(c);
         showDoneNotification(c, n, completed);
       }
-    }, "timeout", android.os.SystemClock.uptimeMillis() + 30000);
+    }, "timeout", android.os.SystemClock.uptimeMillis() + 300000);
   }
 
   private void showProgressNotification (Context ctx, NotificationManager nm) {
