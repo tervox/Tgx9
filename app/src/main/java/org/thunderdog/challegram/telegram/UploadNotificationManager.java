@@ -40,6 +40,8 @@ public class UploadNotificationManager {
   private final SparseLongArray lastUpdateTime = new SparseLongArray();
   private final java.util.HashSet<Integer> countedIds = new java.util.HashSet<>();
   private final java.util.HashSet<Integer> everSeenIds = new java.util.HashSet<>();
+  private final java.util.ArrayList<Integer> toDeleteIds = new java.util.ArrayList<>();
+  private org.thunderdog.challegram.telegram.Tdlib activeTdlib = null;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private Runnable dismissRunnable;
 
@@ -108,7 +110,8 @@ public class UploadNotificationManager {
     ctx.stopService(new Intent(ctx, UploadService.class));
   }
 
-  public void onFileUpdate (TdApi.UpdateFile update) {
+  public void onFileUpdate (TdApi.UpdateFile update, org.thunderdog.challegram.telegram.Tdlib tdlib) {
+    if (tdlib != null) activeTdlib = tdlib;
     TdApi.File file = update.file;
     Context ctx = UI.getAppContext();
     if (ctx == null) return;
@@ -130,6 +133,7 @@ public class UploadNotificationManager {
     if (isDone && !isUploading) {
       activeFiles.remove(file.id);
       lastUpdateTime.delete(file.id);
+      toDeleteIds.add(file.id);
       if (!countedIds.contains(file.id)) {
         countedIds.add(file.id);
         totalCompleted++;
@@ -142,6 +146,14 @@ public class UploadNotificationManager {
         everSeenIds.clear();
         countedIds.clear();
         stopService(ctx);
+        if (activeTdlib != null) {
+          for (int fid : toDeleteIds) {
+            final int id = fid;
+            activeTdlib.client().send(new org.drinkless.tdlib.TdApi.DeleteFile(id), result -> {});
+          }
+        }
+        toDeleteIds.clear();
+        activeTdlib = null;
         showDoneNotification(ctx, nm, completed);
       } else {
         showProgressNotification(ctx, nm);
