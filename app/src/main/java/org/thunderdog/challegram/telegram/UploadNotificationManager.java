@@ -26,7 +26,7 @@ public class UploadNotificationManager {
 
   private static final String CHANNEL_ID = "upload_progress";
   private static final int NOTIF_ID = 55000;
-  private static final long UPDATE_INTERVAL_MS = 2000;
+  private static final long UPDATE_INTERVAL_MS = 5000;
   private static final long DONE_DISMISS_MS = 4000;
 
   private static UploadNotificationManager instance;
