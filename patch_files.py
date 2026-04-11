@@ -174,7 +174,16 @@ td = open(td_path).read()
 
 old_webp = '    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {'
 new_webp = '''    if (filePath != null && filePath.toLowerCase().endsWith(".webp")) {
-      info.mimeType = "image/webp";
+      // Detecta se WEBP é animado
+      try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+          android.graphics.ImageDecoder.Source src = android.graphics.ImageDecoder.createSource(new java.io.File(filePath));
+          android.graphics.drawable.Drawable d = android.graphics.ImageDecoder.decodeDrawable(src);
+          if (d instanceof android.graphics.drawable.AnimatedImageDrawable) {
+            info.mimeType = "image/gif";
+          }
+        }
+      } catch (Throwable ignored) {}
     }
     if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {'''
 
