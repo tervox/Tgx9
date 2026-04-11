@@ -59,7 +59,17 @@ old2 = '''          case TdApi.Error.CONSTRUCTOR: {
 new2 = '''          case TdApi.Error.CONSTRUCTOR: {
             TdApi.Error err = (TdApi.Error) result;
             // Retry on FLOOD_WAIT (429)
-            if (err.code == 429) {
+            if (err.code == 400 && err.message != null && err.message.contains("Wrong file identifier")) {
+              // Arquivo deletado do cache, pula e continua próximo
+              sentFunctionsCount[0] += 1;
+              int nextIndex = sentFunctionsCount[0];
+              if (nextIndex < expectedCount) {
+                tdlib.listeners().subscribeToUpdates((TdApi.Message) null);
+                tdlib.client().send(functions.get(nextIndex), this);
+              } else {
+                done = true;
+              }
+            } else if (err.code == 429) {
               int waitSecs = 5;
               try {
                 String msg = err.message != null ? err.message : "";
