@@ -180,7 +180,13 @@ new_webp = '''    if (filePath != null && filePath.toLowerCase().endsWith(".webp
           android.graphics.ImageDecoder.Source src = android.graphics.ImageDecoder.createSource(new java.io.File(filePath));
           android.graphics.drawable.Drawable d = android.graphics.ImageDecoder.decodeDrawable(src);
           if (d instanceof android.graphics.drawable.AnimatedImageDrawable) {
-            info.mimeType = "image/gif";
+            // Acima de 10MB envia como video, abaixo como GIF
+            java.io.File wf = new java.io.File(filePath);
+            if (wf.length() > 10 * 1024 * 1024) {
+              info.mimeType = "video/mp4";
+            } else {
+              info.mimeType = "image/gif";
+            }
           }
         }
       } catch (Throwable ignored) {}
