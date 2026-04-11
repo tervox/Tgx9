@@ -167,3 +167,20 @@ if old_m4v in td:
     print('OK: .m4v copiado como .mp4')
 else:
     print('SKIP: pattern not found')
+
+# ── Forcar WEBP animado como Animation ───────────────────────────────────────
+td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
+td = open(td_path).read()
+
+old_webp = '    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {'
+new_webp = '''    if (filePath != null && filePath.toLowerCase().endsWith(".webp")) {
+      info.mimeType = "image/webp";
+    }
+    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {'''
+
+if old_webp in td:
+    td = td.replace(old_webp, new_webp, 1)
+    open(td_path, 'w').write(td)
+    print('OK: WEBP mime type forcado')
+else:
+    print('SKIP: pattern not found')
