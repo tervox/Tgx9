@@ -76,6 +76,7 @@ perms = [
     'android.permission.WRITE_EXTERNAL_STORAGE',
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+    'android.permission.WAKE_LOCK',
 ]
 
 for perm in perms:

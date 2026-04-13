@@ -42,6 +42,7 @@ public class UploadNotificationManager {
   private final java.util.HashSet<Integer> everSeenIds = new java.util.HashSet<>();
   private final java.util.ArrayList<Integer> toDeleteIds = new java.util.ArrayList<>();
   private org.thunderdog.challegram.telegram.Tdlib activeTdlib = null;
+  private android.os.PowerManager.WakeLock wakeLock = null;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private Runnable dismissRunnable;
 
@@ -56,6 +57,11 @@ public class UploadNotificationManager {
     public int onStartCommand (Intent intent, int flags, int startId) {
       running = true;
       Context ctx = getApplicationContext();
+      android.os.PowerManager pm = (android.os.PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+      if (pm != null) {
+        UploadNotificationManager.instance().wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "TgxMod:UploadWakeLock");
+        UploadNotificationManager.instance().wakeLock.acquire(30 * 60 * 1000L);
+      }
       String channelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
       Intent openIntent = new Intent(ctx, MainActivity.class);
       openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -82,6 +88,9 @@ public class UploadNotificationManager {
     @Override
     public void onDestroy () {
       running = false;
+      if (UploadNotificationManager.instance().wakeLock != null && UploadNotificationManager.instance().wakeLock.isHeld()) {
+        UploadNotificationManager.instance().wakeLock.release();
+      }
       super.onDestroy();
     }
 
