@@ -77,6 +77,7 @@ perms = [
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
     'android.permission.WAKE_LOCK',
+    'android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE',
 ]
 
 for perm in perms:
@@ -88,7 +89,7 @@ for perm in perms:
         print(f'SKIP: {perm} already exists')
 
 # UploadService
-service_tag = '<service android:name="org.thunderdog.challegram.telegram.UploadNotificationManager$UploadService" android:foregroundServiceType="dataSync" android:exported="false" />'
+service_tag = '<service android:name="org.thunderdog.challegram.telegram.UploadNotificationManager$UploadService" android:foregroundServiceType="dataSync|connectedDevice" android:exported="false" />'
 if service_tag not in manifest:
     manifest = manifest.replace('</application>', f'    {service_tag}\n</application>')
     print('OK: UploadService registered')
