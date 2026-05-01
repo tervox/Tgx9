@@ -74,7 +74,7 @@ public class UploadNotificationManager {
         .setContentTitle("Enviando arquivos...")
         .setOngoing(true)
         .setContentIntent(pi)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setPriority(NotificationCompat.PRIORITY_MAX)
         .build();
       try {
         startForeground(NOTIF_ID, notif);
