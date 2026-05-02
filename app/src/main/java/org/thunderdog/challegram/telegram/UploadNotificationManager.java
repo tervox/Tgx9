@@ -60,7 +60,7 @@ public class UploadNotificationManager {
       android.os.PowerManager pm = (android.os.PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
       if (pm != null) {
         UploadNotificationManager.instance().wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "TgxMod:UploadWakeLock");
-        UploadNotificationManager.instance().wakeLock.acquire(30 * 60 * 1000L);
+        UploadNotificationManager.instance().wakeLock.acquire(); // Sem limite - libera quando upload terminar
       }
       String channelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
       Intent openIntent = new Intent(ctx, MainActivity.class);
