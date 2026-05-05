@@ -77,7 +77,11 @@ public class UploadNotificationManager {
         .setPriority(NotificationCompat.PRIORITY_MAX)
         .build();
       try {
-        startForeground(NOTIF_ID, notif);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+          startForeground(NOTIF_ID, notif, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+          startForeground(NOTIF_ID, notif);
+        }
       } catch (Throwable t) {
         stopSelf();
         return START_NOT_STICKY;
