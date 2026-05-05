@@ -93,7 +93,7 @@ for perm in perms:
         print(f'SKIP: {perm} already exists')
 
 # UploadService
-service_tag = '<service android:name="org.thunderdog.challegram.telegram.UploadNotificationManager$UploadService" android:foregroundServiceType="dataSync|connectedDevice|mediaPlayback|mediaProjection" android:exported="false" android:stopWithTask="false" />'
+service_tag = '<service android:name="org.thunderdog.challegram.telegram.UploadNotificationManager$UploadService" android:foregroundServiceType="dataSync|connectedDevice" android:stopWithTask="false" android:exported="false" android:stopWithTask="false" />'
 if service_tag not in manifest:
     manifest = manifest.replace('</application>', f'    {service_tag}\n</application>')
     print('OK: UploadService registered')

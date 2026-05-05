@@ -57,25 +57,46 @@ public class UploadNotificationManager {
     public int onStartCommand (Intent intent, int flags, int startId) {
       running = true;
       Context ctx = getApplicationContext();
+
+      // WakeLock para manter CPU ativa
       android.os.PowerManager pm = (android.os.PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
       if (pm != null) {
         UploadNotificationManager.instance().wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "TgxMod:UploadWakeLock");
-        UploadNotificationManager.instance().wakeLock.acquire(); // Sem limite - libera quando upload terminar
+        UploadNotificationManager.instance().wakeLock.acquire();
       }
-      String channelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
+
+      // Canal de notificação de alta prioridade
+      String channelId = CHANNEL_ID;
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        android.app.NotificationChannel channel = new android.app.NotificationChannel(
+          channelId, "Upload em andamento", android.app.NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Mantém upload ativo em segundo plano");
+        channel.setShowBadge(true);
+        channel.enableLights(true);
+        android.app.NotificationManager notifMgr = (android.app.NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (notifMgr != null) notifMgr.createNotificationChannel(channel);
+      }
+
       Intent openIntent = new Intent(ctx, MainActivity.class);
       openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
       int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
         ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         : PendingIntent.FLAG_UPDATE_CURRENT;
       PendingIntent pi = PendingIntent.getActivity(ctx, 0, openIntent, piFlags);
+
+      // Notificação persistente de alta prioridade
       Notification notif = new NotificationCompat.Builder(ctx, channelId)
         .setSmallIcon(android.R.drawable.stat_sys_upload)
         .setContentTitle("Enviando arquivos...")
+        .setContentText("Upload em andamento...")
         .setOngoing(true)
+        .setOnlyAlertOnce(true)
         .setContentIntent(pi)
         .setPriority(NotificationCompat.PRIORITY_MAX)
+        .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .build();
+
       try {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
           startForeground(NOTIF_ID, notif,
@@ -101,18 +122,11 @@ public class UploadNotificationManager {
     }
 
     @Override
-    public void onTaskRemoved (Intent rootIntent) {
-      // Reinicia o service se o app for removido das recentes durante upload
-      if (UploadNotificationManager.instance().sessionActive) {
-        Intent restartIntent = new Intent(getApplicationContext(), UploadService.class);
-        restartIntent.setPackage(getPackageName());
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-          getApplicationContext().startForegroundService(restartIntent);
-        } else {
-          getApplicationContext().startService(restartIntent);
-        }
-      }
-      super.onTaskRemoved(rootIntent);
+    @Override
+    public void //onTaskRemoved (Intent rootIntent) {
+      // Desativado para evitar conflito no Android 15
+      super.//onTaskRemoved(rootIntent);
+    }
     }
 
     @Override
