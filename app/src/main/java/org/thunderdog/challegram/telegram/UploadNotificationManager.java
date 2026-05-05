@@ -121,12 +121,6 @@ public class UploadNotificationManager {
       super.onDestroy();
     }
 
-    @Override
-    @Override
-    public void //onTaskRemoved (Intent rootIntent) {
-      // Desativado para evitar conflito no Android 15
-      super.//onTaskRemoved(rootIntent);
-    }
     }
 
     @Override
