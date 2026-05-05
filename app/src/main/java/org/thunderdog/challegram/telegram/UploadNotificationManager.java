@@ -101,6 +101,21 @@ public class UploadNotificationManager {
     }
 
     @Override
+    public void onTaskRemoved (Intent rootIntent) {
+      // Reinicia o service se o app for removido das recentes durante upload
+      if (UploadNotificationManager.instance().sessionActive) {
+        Intent restartIntent = new Intent(getApplicationContext(), UploadService.class);
+        restartIntent.setPackage(getPackageName());
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+          getApplicationContext().startForegroundService(restartIntent);
+        } else {
+          getApplicationContext().startService(restartIntent);
+        }
+      }
+      super.onTaskRemoved(rootIntent);
+    }
+
+    @Override
     public IBinder onBind (Intent intent) {
       return null;
     }
