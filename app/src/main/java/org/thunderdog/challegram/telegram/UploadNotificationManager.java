@@ -116,6 +116,14 @@ public class UploadNotificationManager {
     }
 
     @Override
+    public void onLowMemory () {
+      // Não libera recursos durante upload
+      if (!UploadNotificationManager.instance().sessionActive) {
+        super.onLowMemory();
+      }
+    }
+
+    @Override
     public IBinder onBind (Intent intent) {
       return null;
     }
