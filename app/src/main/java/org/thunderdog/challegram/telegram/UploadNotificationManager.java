@@ -121,8 +121,6 @@ public class UploadNotificationManager {
       super.onDestroy();
     }
 
-    }
-
     @Override
     public void onLowMemory () {
       // Não libera recursos durante upload
