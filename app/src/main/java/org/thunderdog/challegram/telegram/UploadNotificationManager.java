@@ -58,14 +58,14 @@ public class UploadNotificationManager {
       running = true;
       Context ctx = getApplicationContext();
 
-      // WakeLock para manter CPU ativa
+      // WakeLock sem limite
       android.os.PowerManager pm = (android.os.PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
       if (pm != null) {
         UploadNotificationManager.instance().wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "TgxMod:UploadWakeLock");
         UploadNotificationManager.instance().wakeLock.acquire();
       }
 
-      // Canal de notificação de alta prioridade
+      // Canal de alta prioridade (Grok)
       String channelId = CHANNEL_ID;
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         android.app.NotificationChannel channel = new android.app.NotificationChannel(
@@ -84,7 +84,6 @@ public class UploadNotificationManager {
         : PendingIntent.FLAG_UPDATE_CURRENT;
       PendingIntent pi = PendingIntent.getActivity(ctx, 0, openIntent, piFlags);
 
-      // Notificação persistente de alta prioridade
       Notification notif = new NotificationCompat.Builder(ctx, channelId)
         .setSmallIcon(android.R.drawable.stat_sys_upload)
         .setContentTitle("Enviando arquivos...")
@@ -119,14 +118,6 @@ public class UploadNotificationManager {
         UploadNotificationManager.instance().wakeLock.release();
       }
       super.onDestroy();
-    }
-
-    @Override
-    public void onLowMemory () {
-      // Não libera recursos durante upload
-      if (!UploadNotificationManager.instance().sessionActive) {
-        super.onLowMemory();
-      }
     }
 
     @Override
