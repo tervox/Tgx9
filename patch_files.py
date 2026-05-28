@@ -205,3 +205,18 @@ if old_webp in td:
     print('OK: WEBP mime type forcado')
 else:
     print('SKIP: pattern not found')
+
+# ── Manter app visível em segundo plano durante upload ───────────────────────
+manifest_path = 'tgx/app/src/main/AndroidManifest.xml'
+manifest = open(manifest_path).read()
+
+# Adiciona flag para manter processo ativo
+if 'android:persistent="true"' not in manifest:
+    manifest = manifest.replace(
+        'android:name="org.thunderdog.challegram.BaseActivity"',
+        'android:name="org.thunderdog.challegram.BaseActivity" android:excludeFromRecents="false" android:alwaysRetainTaskState="true"'
+    )
+    open(manifest_path, 'w').write(manifest)
+    print('OK: Activity configurada para segundo plano')
+else:
+    print('SKIP: já configurado')
