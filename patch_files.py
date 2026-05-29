@@ -213,8 +213,8 @@ manifest = open(manifest_path).read()
 # Adiciona flag para manter processo ativo
 if 'android:persistent="true"' not in manifest:
     manifest = manifest.replace(
-        'android:name="org.thunderdog.challegram.BaseActivity"',
-        'android:name="org.thunderdog.challegram.BaseActivity" android:excludeFromRecents="false" android:alwaysRetainTaskState="true"'
+        'android:name="org.thunderdog.challegram.MainActivity"',
+        'android:name="org.thunderdog.challegram.MainActivity" android:excludeFromRecents="false" android:alwaysRetainTaskState="true"'
     )
     open(manifest_path, 'w').write(manifest)
     print('OK: Activity configurada para segundo plano')
