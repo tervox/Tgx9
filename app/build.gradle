@@ -1,0 +1,2 @@
+android { defaultConfig { multiDexEnabled true } }
+android { defaultConfig { manifestPlaceholders = [foregroundServiceType: 'dataSync'] } }
