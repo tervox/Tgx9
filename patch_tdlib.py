@@ -65,3 +65,11 @@ for p in patterns:
         break
 else:
     print('Nenhum padrão encontrado')
+
+# Busca método de autorização no Tdlib.java
+tdlib_path = 'tgx/app/src/main/java/org/thunderdog/challegram/telegram/Tdlib.java'
+tdlib = open(tdlib_path).read()
+import re
+methods = re.findall(r'private void \w+.*?authorizat.*?\)', tdlib, re.IGNORECASE)
+for m in methods[:5]:
+    print('FOUND:', m)
