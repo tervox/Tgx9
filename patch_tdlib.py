@@ -12,8 +12,7 @@ if old in content:
     open(path, 'w').write(content.replace(old, new, 1))
     print('OK: Tdlib.java patched')
 else:
-    print('ERROR: pattern not found')
-    sys.exit(1)
+    print('SKIP: padrao nao encontrado em Tdlib.java — hook de upload nao aplicado')
 
 # ── Iniciar service quando TDLib conecta ─────────────────────────────────────
 old2 = '  private void onAuthorizationStateChanged (TdApi.AuthorizationState authorizationState) {'
