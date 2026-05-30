@@ -24,7 +24,7 @@ public class UploadNotificationManager {
 
   private static final String CHANNEL_ID = "upload_progress";
   private static final int NOTIF_ID = 55000;
-  private static final long UPDATE_INTERVAL_MS = 5000;
+  private static final long UPDATE_INTERVAL_MS = 1000;
   private static final long DONE_DISMISS_MS = 4000;
 
   private static UploadNotificationManager instance;
@@ -124,6 +124,13 @@ public class UploadNotificationManager {
         UploadNotificationManager.instance().wakeLock.release();
       }
       super.onDestroy();
+    }
+
+    @Override
+    public void onLowMemory () {
+      super.onLowMemory();
+      android.os.PowerManager.WakeLock wl = UploadNotificationManager.instance().wakeLock;
+      if (wl != null && !wl.isHeld()) { wl.acquire(); }
     }
 
     @Override
@@ -289,7 +296,7 @@ public class UploadNotificationManager {
 
   private Notification buildNotif (Context ctx, String title, String text,
       int icon, boolean ongoing, int progressMax, int progress) {
-    String channelId = U.getNotificationChannel(CHANNEL_ID, R.string.UploadProgressNotificationChannel);
+    String channelId = CHANNEL_ID;
     Intent openIntent = new Intent(ctx, MainActivity.class);
     openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
     int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M

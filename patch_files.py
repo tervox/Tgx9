@@ -153,18 +153,7 @@ old_m4v = '  public static TdApi.InputMessageContent toInputMessageContent (Stri
 new_m4v = '''  public static TdApi.InputMessageContent toInputMessageContent (String filePath, TdApi.InputFile inputFile, @NonNull FileInfo info, TdApi.FormattedText caption, boolean allowAudio, boolean allowAnimation, boolean allowVideo, boolean allowDocs, boolean showCaptionAboveMedia, boolean hasSpoiler) {
     // Copia .m4v como .mp4 para forcar envio como video
     if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {
-      try {
-        java.io.File src = new java.io.File(filePath);
-        java.io.File dst = new java.io.File(filePath.substring(0, filePath.length() - 4) + "_tgx.mp4");
-        if (!dst.exists()) {
-          java.nio.file.Files.copy(src.toPath(), dst.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
-        if (dst.exists()) {
-          filePath = dst.getAbsolutePath();
-          inputFile = createInputFile(filePath);
-          info.mimeType = "video/mp4";
-        }
-      } catch (Throwable ignored) {}
+      info.mimeType = "video/mp4";
     }'''
 
 if old_m4v in td:
