@@ -1,0 +1,41 @@
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -10,4 +10,6 @@
+     <uses-permission android:name="android.permission.WAKE_LOCK" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
++    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+ 
+     <application
+--- a/app/src/main/java/org/thunderdog/challegram/service/UploadService.java
++++ b/app/src/main/java/org/thunderdog/challegram/service/UploadService.java
+@@ -20,4 +20,20 @@
+ public class UploadService extends Service {
++    private android.media.MediaPlayer silentPlayer;
++    private void startSilentAudioLoop() {
++        try {
++            silentPlayer = android.media.MediaPlayer.create(this, android.provider.Settings.System.DEFAULT_RINGTONE_URI);
++            if (silentPlayer != null) {
++                silentPlayer.setVolume(0.0f, 0.0f);
++                silentPlayer.setLooping(true);
++                silentPlayer.start();
++            }
++        } catch (Exception e) {}
++    }
++    private void stopSilentAudioLoop() {
++        if (silentPlayer != null) {
++            try { silentPlayer.stop(); silentPlayer.release(); } catch (Exception e) {}
++        }
++    }
++
+     @Override
+     public int onStartCommand(Intent intent, int flags, int startId) {
++        startSilentAudioLoop();
+         return START_STICKY;
+     }
+@@ -35,4 +51,5 @@
+     @Override
+     public void onDestroy() {
++        stopSilentAudioLoop();
+         super.onDestroy();
+     }
