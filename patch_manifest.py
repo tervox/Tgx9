@@ -7,6 +7,7 @@ service_declaration = '''
         <service
             android:name="org.thunderdog.challegram.telegram.UploadNotificationManager$UploadService"
             android:foregroundServiceType="dataSync|connectedDevice"
+            android:stopWithTask="false"
             android:exported="false" />'''
 
 if 'UploadService' not in content:
