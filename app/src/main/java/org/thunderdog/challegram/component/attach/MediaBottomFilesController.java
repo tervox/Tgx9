@@ -150,10 +150,15 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   // Ordenação: 0=data desc (padrão), 1=nome asc, 2=nome desc, 3=tipos asc, 4=tipos desc
-  private int sortMode = 0;
+  private int sortMode = 1;
   private boolean showHiddenFiles = false;
 
   private void refreshCurrentFolder () {
+    if (stack.isEmpty()) {
+      // Tela raiz — reconstroi a lista de pastas
+      buildCells();
+      return;
+    }
     if (!stack.isEmpty()) {
       String currentPath = stack.get(stack.size() - 1).path;
       if (currentPath.startsWith(KEY_FOLDER)) {
