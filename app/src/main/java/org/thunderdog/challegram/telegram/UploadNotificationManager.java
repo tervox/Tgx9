@@ -96,6 +96,14 @@ public class UploadNotificationManager {
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .build();
 
+      if (Build.VERSION.SDK_INT >= 34) {
+          startForeground(NOTIF_ID, notif, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE);
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          startForeground(NOTIF_ID, notif, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+      } else {
+          startForeground(NOTIF_ID, notif);
+      }
+
       try {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
           startForeground(NOTIF_ID, notif,
