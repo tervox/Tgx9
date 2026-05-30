@@ -104,7 +104,7 @@ public class UploadNotificationManager {
         stopSelf();
         return START_NOT_STICKY;
       }
-      return START_STICKY;
+      return START_NOT_STICKY;
     }
 
     @Override
@@ -177,22 +177,31 @@ public class UploadNotificationManager {
         totalCompleted++;
       }
       if (activeFiles.size() == 0) {
-        int completed = totalCompleted;
-        totalStarted = 0;
-        totalCompleted = 0;
-        sessionActive = false;
-        everSeenIds.clear();
-        countedIds.clear();
-        stopService(ctx);
-        if (activeTdlib != null) {
-          for (int fid : toDeleteIds) {
-            final int id = fid;
-            activeTdlib.client().send(new org.drinkless.tdlib.TdApi.DeleteFile(id), result -> {});
+        // Aguarda 2.5s: TDLib envia arquivos sequencialmente,
+        // o proximo pode comecar logo apos o anterior terminar
+        handler.postDelayed(() -> {
+          if (!sessionActive || activeFiles.size() > 0) return;
+          Context c2 = UI.getAppContext();
+          if (c2 == null) return;
+          NotificationManager nm2 = (NotificationManager) c2.getSystemService(Context.NOTIFICATION_SERVICE);
+          int completed = totalCompleted;
+          totalStarted = 0;
+          totalCompleted = 0;
+          sessionActive = false;
+          everSeenIds.clear();
+          countedIds.clear();
+          stopService(c2);
+          if (nm2 != null) nm2.cancel(NOTIF_ID);
+          if (activeTdlib != null) {
+            for (int fid : toDeleteIds) {
+              final int id2 = fid;
+              activeTdlib.client().send(new org.drinkless.tdlib.TdApi.DeleteFile(id2), r -> {});
+            }
           }
-        }
-        toDeleteIds.clear();
-        activeTdlib = null;
-        showDoneNotification(ctx, nm, completed);
+          toDeleteIds.clear();
+          activeTdlib = null;
+          if (nm2 != null) showDoneNotification(c2, nm2, completed);
+        }, 2500);
       } else {
         showProgressNotification(ctx, nm);
       }
@@ -208,7 +217,7 @@ public class UploadNotificationManager {
       startService(ctx);
     }
 
-    if (!everSeenIds.contains(file.id)) {
+    if (!everSeenIds.contains(file.id) && file.size > 0) {
       everSeenIds.add(file.id);
       totalStarted++;
     }
