@@ -40,3 +40,28 @@ if old2 in content:
     print('OK: service inicia com TDLib')
 else:
     print('SKIP: pattern not found')
+
+# ── Impedir TDLib de pausar uploads em background ────────────────────────────
+tdlib_path = 'tgx/app/src/main/java/org/thunderdog/challegram/telegram/Tdlib.java'
+tdlib = open(tdlib_path).read()
+
+# Busca o método que pausa quando vai para background
+import re
+patterns = [
+    'onAppBackgrounded',
+    'setIsBackground', 
+    'pauseNetwork',
+    'networkType.*NONE',
+    'setNetworkType.*None'
+]
+
+for p in patterns:
+    matches = [(m.start(), m.group()) for m in re.finditer(p, tdlib)]
+    if matches:
+        print(f'Encontrado: {p} em {len(matches)} lugar(es)')
+        # Mostra contexto do primeiro match
+        idx = matches[0][0]
+        print(repr(tdlib[max(0,idx-50):idx+100]))
+        break
+else:
+    print('Nenhum padrão encontrado')
