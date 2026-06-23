@@ -106,7 +106,7 @@ jobs:
       - name: Build APK
         run: |
           cd tgx
-          ./gradlew assembleFossArm32Release --stacktrace
+          ./gradlew assembleLegacyArm32Release --stacktrace
 
       - name: Sign APK
         run: |
