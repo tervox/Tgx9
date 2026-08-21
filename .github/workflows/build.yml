@@ -15,15 +15,17 @@ jobs:
         with:
           path: tgx9-mods
 
-      - name: Clone original Telegram-X with all submodules
+      - name: Clone original Telegram-X at the pinned revision
         run: |
-          git clone --recurse-submodules \
+          # Do not recurse before checkout: that would leave newer submodule
+          # files in the tree and make the old pinned OpenSSL checkout fail.
+          git clone --no-recurse-submodules \
             https://github.com/TGX-Android/Telegram-X.git tgx
           cd tgx
-          git checkout 7070d58f
+          git checkout --detach 7070d58f8bc0c914403544e8cf4d9f79d53b965d
+          git submodule sync --recursive
           git submodule update --init --recursive
           cd ..
-          cd tgx && git checkout 7070d58f8bc0c914403544e8cf4d9f79d53b965d && cd ..
 
       - name: Apply our modifications
         run: |
