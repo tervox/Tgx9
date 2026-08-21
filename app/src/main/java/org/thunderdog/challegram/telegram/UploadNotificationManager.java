@@ -1,327 +1,548 @@
 package org.thunderdog.challegram.telegram;
+
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.util.SparseArray;
-import android.util.SparseLongArray;
+import android.os.PowerManager;
+import android.os.SystemClock;
 
 import androidx.core.app.NotificationCompat;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.MainActivity;
 import org.thunderdog.challegram.R;
-import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.tool.UI;
 
-public class UploadNotificationManager {
+import java.util.ArrayList;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 
+/**
+ * Keeps a single foreground notification for local media uploads.
+ *
+ * The total is supplied by the selection/send pipeline. Inferring it from
+ * UpdateFile events is incorrect because TDLib may emit the first event for
+ * each file at different times.
+ */
+public final class UploadNotificationManager {
   private static final String CHANNEL_ID = "upload_progress";
-  private static final int NOTIF_ID = 55000;
-  private static final long UPDATE_INTERVAL_MS = 1000;
-  private static final long DONE_DISMISS_MS = 4000;
+  private static final int NOTIFICATION_ID = 55000;
+  private static final long REFRESH_INTERVAL_MS = 350;
+  private static final long FINISH_DELAY_MS = 900;
+  private static final long MAX_IDLE_WAIT_MS = 120000;
+  private static final long NETWORK_RECOVERY_INTERVAL_MS = 8000;
 
   private static UploadNotificationManager instance;
 
-  public static UploadNotificationManager instance () {
-    if (instance == null) instance = new UploadNotificationManager();
+  public static synchronized UploadNotificationManager instance () {
+    if (instance == null) {
+      instance = new UploadNotificationManager();
+    }
     return instance;
   }
 
-  private final SparseArray<TdApi.File> activeFiles = new SparseArray<>();
-  private final SparseLongArray lastUpdateTime = new SparseLongArray();
-  private final java.util.HashSet<Integer> countedIds = new java.util.HashSet<>();
-  private final java.util.HashSet<Integer> everSeenIds = new java.util.HashSet<>();
-  private final java.util.ArrayList<Integer> toDeleteIds = new java.util.ArrayList<>();
-  private org.thunderdog.challegram.telegram.Tdlib activeTdlib = null;
-  private android.os.PowerManager.WakeLock wakeLock = null;
+  private final Object lock = new Object();
   private final Handler handler = new Handler(Looper.getMainLooper());
-  private Runnable dismissRunnable;
+  private final HashMap<Integer, TdApi.File> activeFiles = new HashMap<>();
+  private final HashSet<Integer> startedFileIds = new HashSet<>();
+  private final HashSet<Integer> completedFileIds = new HashSet<>();
 
-  private int totalStarted = 0;
-  private int totalCompleted = 0;
-  private boolean sessionActive = false;
+  private Tdlib activeTdlib;
+  private PowerManager.WakeLock wakeLock;
+  private boolean sessionActive;
+  private int expectedCount;
+  private int completedCount;
+  private long lastEventUptime;
+  private long lastRefreshUptime;
+  private boolean refreshPosted;
+  private Runnable finishRunnable;
+  private Runnable idleRunnable;
+  private Runnable recoveryRunnable;
+
+  private UploadNotificationManager () { }
+
+  /** Counts local media represented by SendMessage/SendMessageAlbum functions. */
+  public static int countUploadItems (List<TdApi.Function<?>> functions) {
+    if (functions == null || functions.isEmpty()) {
+      return 0;
+    }
+    int count = 0;
+    for (TdApi.Function<?> function : functions) {
+      Object single = readField(function, "inputMessageContent");
+      if (isUploadContent(single)) {
+        count++;
+      }
+      Object album = readField(function, "inputMessageContents");
+      if (album != null && album.getClass().isArray()) {
+        int length = Array.getLength(album);
+        for (int i = 0; i < length; i++) {
+          if (isUploadContent(Array.get(album, i))) {
+            count++;
+          }
+        }
+      }
+    }
+    return count;
+  }
+
+  private static boolean isUploadContent (Object content) {
+    if (!(content instanceof TdApi.InputMessageContent)) {
+      return false;
+    }
+    int constructor = ((TdApi.InputMessageContent) content).getConstructor();
+    return constructor == TdApi.InputMessagePhoto.CONSTRUCTOR ||
+      constructor == TdApi.InputMessageVideo.CONSTRUCTOR ||
+      constructor == TdApi.InputMessageAnimation.CONSTRUCTOR ||
+      constructor == TdApi.InputMessageDocument.CONSTRUCTOR ||
+      constructor == TdApi.InputMessageAudio.CONSTRUCTOR;
+  }
+
+  private static Object readField (Object object, String name) {
+    if (object == null) {
+      return null;
+    }
+    try {
+      Field field = object.getClass().getField(name);
+      return field.get(object);
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
+  public void beginBatch (int total, Tdlib tdlib) {
+    if (total <= 0) {
+      return;
+    }
+    Context context = UI.getAppContext();
+    if (context == null) {
+      return;
+    }
+    synchronized (lock) {
+      if (!sessionActive) {
+        activeFiles.clear();
+        startedFileIds.clear();
+        completedFileIds.clear();
+        expectedCount = 0;
+        completedCount = 0;
+        sessionActive = true;
+      }
+      expectedCount += total;
+      if (tdlib != null) {
+        activeTdlib = tdlib;
+      }
+      lastEventUptime = SystemClock.uptimeMillis();
+      cancelFinishLocked();
+      cancelIdleLocked();
+      scheduleIdleCheckLocked(context);
+      scheduleRecoveryLocked();
+    }
+    handler.post(() -> {
+      startUploadService(context);
+      acquireWakeLock(context);
+      showProgressNotification(context);
+    });
+  }
+
+  public void onFileUpdate (TdApi.UpdateFile update, Tdlib tdlib) {
+    if (update == null || update.file == null) {
+      return;
+    }
+    final TdApi.File file = update.file;
+    final boolean uploading = file.remote != null && file.remote.isUploadingActive;
+    final boolean completed = file.remote != null && file.remote.isUploadingCompleted;
+    if (!uploading && !completed) {
+      return;
+    }
+
+    Context context = UI.getAppContext();
+    if (context == null) {
+      return;
+    }
+
+    boolean shouldFinish = false;
+    synchronized (lock) {
+      if (!sessionActive) {
+        // Fallback for send paths that do not expose a selection count.
+        sessionActive = true;
+        expectedCount = 1;
+        completedCount = 0;
+        startedFileIds.clear();
+        completedFileIds.clear();
+      }
+      if (tdlib != null) {
+        activeTdlib = tdlib;
+      }
+      if (uploading) {
+        if (startedFileIds.add(file.id) && expectedCount < startedFileIds.size()) {
+          expectedCount = startedFileIds.size();
+        }
+        activeFiles.put(file.id, file);
+      }
+      if (completed && !uploading) {
+        activeFiles.remove(file.id);
+        if (completedFileIds.add(file.id)) {
+          completedCount++;
+        }
+      }
+      lastEventUptime = SystemClock.uptimeMillis();
+      cancelFinishLocked();
+      scheduleIdleCheckLocked(context);
+      scheduleRecoveryLocked();
+      shouldFinish = activeFiles.isEmpty() && expectedCount > 0 && completedCount >= expectedCount;
+      if (shouldFinish) {
+        scheduleFinishLocked(context);
+      }
+    }
+
+    handler.post(() -> {
+      startUploadService(context);
+      acquireWakeLock(context);
+      postProgressNotification(context);
+    });
+  }
+
+  public boolean hasActiveSession () {
+    synchronized (lock) {
+      return sessionActive;
+    }
+  }
+
+  public void cancelBatch () {
+    Context context = UI.getAppContext();
+    synchronized (lock) {
+      sessionActive = false;
+      activeFiles.clear();
+      startedFileIds.clear();
+      completedFileIds.clear();
+      expectedCount = 0;
+      completedCount = 0;
+      activeTdlib = null;
+      cancelFinishLocked();
+      cancelIdleLocked();
+      cancelRecoveryLocked();
+    }
+    if (context != null) {
+      handler.post(() -> stopUploadService(context, false));
+    }
+  }
+
+  private void postProgressNotification (Context context) {
+    synchronized (lock) {
+      if (!sessionActive || refreshPosted) {
+        return;
+      }
+      long now = SystemClock.uptimeMillis();
+      long delay = Math.max(0, REFRESH_INTERVAL_MS - (now - lastRefreshUptime));
+      refreshPosted = true;
+      handler.postDelayed(() -> {
+        synchronized (lock) {
+          refreshPosted = false;
+          lastRefreshUptime = SystemClock.uptimeMillis();
+        }
+        showProgressNotification(context);
+      }, delay);
+    }
+  }
+
+  private void showProgressNotification (Context context) {
+    NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+    if (manager == null) {
+      return;
+    }
+
+    int total;
+    int completed;
+    TdApi.File current = null;
+    synchronized (lock) {
+      if (!sessionActive) {
+        return;
+      }
+      total = expectedCount;
+      completed = completedCount;
+      for (TdApi.File file : activeFiles.values()) {
+        if (current == null || file.remote.uploadedSize > current.remote.uploadedSize) {
+          current = file;
+        }
+      }
+    }
+
+    int remaining = Math.max(0, total - completed);
+    String title = context.getString(R.string.UploadNotificationTitle);
+    String text;
+    int progress = 0;
+    if (current != null) {
+      long size = current.size;
+      long uploaded = current.remote.uploadedSize;
+      progress = size > 0 ? Math.max(0, Math.min(100, (int) (uploaded * 100L / size))) : 0;
+      text = context.getString(R.string.UploadNotificationProgress, completed, total, remaining);
+      String currentText = context.getString(R.string.UploadNotificationCurrent, Math.min(total, completed + 1), total, progress);
+      notifyProgress(context, manager, title, text + "\n" + currentText, progress);
+    } else {
+      text = context.getString(R.string.UploadNotificationPreparing, remaining);
+      notifyProgress(context, manager, title, text, progress);
+    }
+  }
+
+  private void notifyProgress (Context context, NotificationManager manager, String title, String text, int progress) {
+    manager.notify(NOTIFICATION_ID, buildNotification(context, title, text, android.R.drawable.stat_sys_upload, true, 100, progress));
+  }
+
+  private void scheduleFinishLocked (Context context) {
+    cancelFinishLocked();
+    finishRunnable = () -> finishIfComplete(context);
+    handler.postDelayed(finishRunnable, FINISH_DELAY_MS);
+  }
+
+  private void finishIfComplete (Context context) {
+    int completed;
+    Tdlib tdlib;
+    synchronized (lock) {
+      if (!sessionActive || !activeFiles.isEmpty() || completedCount < expectedCount) {
+        return;
+      }
+      completed = completedCount;
+      tdlib = activeTdlib;
+      sessionActive = false;
+      activeFiles.clear();
+      startedFileIds.clear();
+      completedFileIds.clear();
+      expectedCount = 0;
+      completedCount = 0;
+      activeTdlib = null;
+      finishRunnable = null;
+      cancelIdleLocked();
+      cancelRecoveryLocked();
+    }
+    stopUploadService(context, true);
+    showDoneNotification(context, completed);
+    if (tdlib != null) {
+      // No DeleteFile call here: TDLib owns the temporary upload file lifecycle.
+    }
+  }
+
+  private void scheduleIdleCheckLocked (Context context) {
+    cancelIdleLocked();
+    idleRunnable = () -> {
+      synchronized (lock) {
+        if (!sessionActive || SystemClock.uptimeMillis() - lastEventUptime < MAX_IDLE_WAIT_MS) {
+          return;
+        }
+      }
+      cancelBatch();
+    };
+    handler.postDelayed(idleRunnable, MAX_IDLE_WAIT_MS);
+  }
+
+  private void cancelFinishLocked () {
+    if (finishRunnable != null) {
+      handler.removeCallbacks(finishRunnable);
+      finishRunnable = null;
+    }
+  }
+
+  private void cancelIdleLocked () {
+    if (idleRunnable != null) {
+      handler.removeCallbacks(idleRunnable);
+      idleRunnable = null;
+    }
+  }
+
+  private void scheduleRecoveryLocked () {
+    if (recoveryRunnable != null) {
+      return;
+    }
+    recoveryRunnable = () -> {
+      Tdlib tdlib;
+      synchronized (lock) {
+        recoveryRunnable = null;
+        if (!sessionActive) {
+          return;
+        }
+        tdlib = activeTdlib;
+      }
+      if (tdlib != null) {
+        tdlib.ensureNetworkActiveForUpload();
+      }
+      synchronized (lock) {
+        if (sessionActive) {
+          scheduleRecoveryLocked();
+        }
+      }
+    };
+    handler.postDelayed(recoveryRunnable, NETWORK_RECOVERY_INTERVAL_MS);
+  }
+
+  private void cancelRecoveryLocked () {
+    if (recoveryRunnable != null) {
+      handler.removeCallbacks(recoveryRunnable);
+      recoveryRunnable = null;
+    }
+  }
+
+  private void showDoneNotification (Context context, int completed) {
+    NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+    if (manager == null) {
+      return;
+    }
+    manager.notify(NOTIFICATION_ID, buildNotification(context,
+      context.getString(R.string.UploadNotificationDone),
+      context.getString(R.string.UploadNotificationDoneText, completed),
+      android.R.drawable.stat_sys_upload_done, false, 0, 0));
+    handler.postDelayed(() -> manager.cancel(NOTIFICATION_ID), 4500);
+  }
+
+  private void ensureChannel (Context context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
+        context.getString(R.string.UploadProgressNotificationChannel),
+        NotificationManager.IMPORTANCE_LOW);
+      channel.setDescription(context.getString(R.string.UploadProgressNotificationChannel));
+      channel.setShowBadge(true);
+      NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+      if (manager != null) {
+        manager.createNotificationChannel(channel);
+      }
+    }
+  }
+
+  private Notification buildNotification (Context context, String title, String text, int icon, boolean ongoing, int max, int progress) {
+    ensureChannel(context);
+    Intent openIntent = new Intent(context, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT : PendingIntent.FLAG_UPDATE_CURRENT;
+    PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, openIntent, flags);
+    NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+      .setSmallIcon(icon)
+      .setContentTitle(title)
+      .setContentText(text)
+      .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+      .setOngoing(ongoing)
+      .setOnlyAlertOnce(true)
+      .setAutoCancel(!ongoing)
+      .setContentIntent(pendingIntent)
+      .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+      .setPriority(NotificationCompat.PRIORITY_LOW)
+      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC);
+    if (max > 0) {
+      builder.setProgress(max, progress, false);
+    }
+    return builder.build();
+  }
+
+  private void startUploadService (Context context) {
+    ensureChannel(context);
+    try {
+      Intent intent = new Intent(context, UploadService.class);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        context.startForegroundService(intent);
+      } else {
+        context.startService(intent);
+      }
+    } catch (Throwable ignored) {
+      // The upload itself remains owned by TDLib; the service is an Android
+      // execution aid, not a second upload engine.
+    }
+  }
+
+  private void stopUploadService (Context context, boolean completed) {
+    try {
+      context.stopService(new Intent(context, UploadService.class));
+    } catch (Throwable ignored) { }
+    releaseWakeLock();
+    NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+    if (manager != null && !completed) {
+      manager.cancel(NOTIFICATION_ID);
+    }
+  }
+
+  private void acquireWakeLock (Context context) {
+    synchronized (lock) {
+      if (wakeLock != null && wakeLock.isHeld()) {
+        return;
+      }
+      PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+      if (powerManager == null) {
+        return;
+      }
+      wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, context.getPackageName() + ":Upload");
+      wakeLock.setReferenceCounted(false);
+      wakeLock.acquire();
+    }
+  }
+
+  private void releaseWakeLock () {
+    synchronized (lock) {
+      if (wakeLock != null) {
+        try {
+          if (wakeLock.isHeld()) {
+            wakeLock.release();
+          }
+        } catch (Throwable ignored) { }
+        wakeLock = null;
+      }
+    }
+  }
 
   public static class UploadService extends Service {
-    public static boolean running = false;
+    public static volatile boolean running;
+
+    @Override
+    public void onCreate () {
+      super.onCreate();
+      running = true;
+      Context context = getApplicationContext();
+      instance().ensureChannel(context);
+      Notification notification = instance().buildNotification(context,
+        context.getString(R.string.UploadNotificationTitle),
+        context.getString(R.string.UploadNotificationPreparing, 0),
+        android.R.drawable.stat_sys_upload, true, 100, 0);
+      try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+          startForeground(NOTIFICATION_ID, notification);
+        }
+      } catch (Throwable ignored) {
+        stopSelf();
+      }
+    }
 
     @Override
     public int onStartCommand (Intent intent, int flags, int startId) {
-      running = true;
-      Context ctx = getApplicationContext();
-
-      // WakeLock sem limite
-      android.os.PowerManager pm = (android.os.PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
-      if (pm != null) {
-        UploadNotificationManager.instance().wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "TgxMod:UploadWakeLock");
-        UploadNotificationManager.instance().wakeLock.acquire();
-      }
-
-      // Canal de alta prioridade (Grok)
-      String channelId = CHANNEL_ID;
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        android.app.NotificationChannel channel = new android.app.NotificationChannel(
-          channelId, "Upload em andamento", android.app.NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription("Mantém upload ativo em segundo plano");
-        channel.setShowBadge(true);
-        channel.enableLights(true);
-        android.app.NotificationManager notifMgr = (android.app.NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (notifMgr != null) notifMgr.createNotificationChannel(channel);
-      }
-
-      Intent openIntent = new Intent(ctx, MainActivity.class);
-      openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-      int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-        ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-        : PendingIntent.FLAG_UPDATE_CURRENT;
-      PendingIntent pi = PendingIntent.getActivity(ctx, 0, openIntent, piFlags);
-
-      Notification notif = new NotificationCompat.Builder(ctx, channelId)
-        .setSmallIcon(android.R.drawable.stat_sys_upload)
-        .setContentTitle("Enviando arquivos...")
-        .setContentText("Upload em andamento...")
-        .setOngoing(true)
-        .setOnlyAlertOnce(true)
-        .setContentIntent(pi)
-        .setPriority(NotificationCompat.PRIORITY_MAX)
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-        .build();
-
-      try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-          startForeground(NOTIF_ID, notif, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        } else {
-          startForeground(NOTIF_ID, notif);
-        }
-      } catch (Throwable t) {
-        stopSelf();
+      if (!instance().hasActiveSession()) {
+        stopSelfResult(startId);
         return START_NOT_STICKY;
       }
-      return START_NOT_STICKY;
+      return START_STICKY;
+    }
+
+    @Override
+    public void onTaskRemoved (Intent rootIntent) {
+      // Do not stop the service when the task is swiped away.
+      super.onTaskRemoved(rootIntent);
     }
 
     @Override
     public void onDestroy () {
       running = false;
-      if (UploadNotificationManager.instance().wakeLock != null && UploadNotificationManager.instance().wakeLock.isHeld()) {
-        UploadNotificationManager.instance().wakeLock.release();
-      }
+      instance().releaseWakeLock();
       super.onDestroy();
-    }
-
-    @Override
-    public void onLowMemory () {
-      super.onLowMemory();
-      android.os.PowerManager.WakeLock wl = UploadNotificationManager.instance().wakeLock;
-      if (wl != null && !wl.isHeld()) { wl.acquire(); }
     }
 
     @Override
     public IBinder onBind (Intent intent) {
       return null;
     }
-  }
-
-  private void startService (Context ctx) {
-    if (!UploadService.running) {
-      try {
-        Intent intent = new Intent(ctx, UploadService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          ctx.startForegroundService(intent);
-        } else {
-          ctx.startService(intent);
-        }
-      } catch (Throwable t) {
-        // Android 15 bloqueia foreground service em background, ignora
-      }
-    }
-  }
-
-  private void stopService (Context ctx) {
-    ctx.stopService(new Intent(ctx, UploadService.class));
-  }
-
-  public void onFileUpdate (TdApi.UpdateFile update, org.thunderdog.challegram.telegram.Tdlib tdlib) {
-    if (tdlib != null) activeTdlib = tdlib;
-    TdApi.File file = update.file;
-    Context ctx = UI.getAppContext();
-    if (ctx == null) return;
-
-    boolean isUploading = file.remote.isUploadingActive;
-    boolean isDone = file.remote.isUploadingCompleted;
-
-    if (!isUploading && !isDone) return;
-
-    NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-    if (nm == null) return;
-
-    // Cancela dismiss pendente se novo upload começou
-    if (dismissRunnable != null) {
-      handler.removeCallbacks(dismissRunnable);
-      dismissRunnable = null;
-    }
-
-    if (isDone && !isUploading) {
-      activeFiles.remove(file.id);
-      lastUpdateTime.delete(file.id);
-      toDeleteIds.add(file.id);
-      if (!countedIds.contains(file.id)) {
-        countedIds.add(file.id);
-        totalCompleted++;
-      }
-      if (activeFiles.size() == 0) {
-        // Aguarda 2.5s: TDLib envia arquivos sequencialmente,
-        // o proximo pode comecar logo apos o anterior terminar
-        handler.postDelayed(() -> {
-          if (!sessionActive || activeFiles.size() > 0) return;
-          Context c2 = UI.getAppContext();
-          if (c2 == null) return;
-          NotificationManager nm2 = (NotificationManager) c2.getSystemService(Context.NOTIFICATION_SERVICE);
-          int completed = totalCompleted;
-          totalStarted = 0;
-          totalCompleted = 0;
-          sessionActive = false;
-          everSeenIds.clear();
-          countedIds.clear();
-          stopService(c2);
-          if (nm2 != null) nm2.cancel(NOTIF_ID);
-          if (activeTdlib != null) {
-            for (int fid : toDeleteIds) {
-              final int id2 = fid;
-              activeTdlib.client().send(new org.drinkless.tdlib.TdApi.DeleteFile(id2), r -> {});
-            }
-          }
-          toDeleteIds.clear();
-          activeTdlib = null;
-          if (nm2 != null) showDoneNotification(c2, nm2, completed);
-        }, 2500);
-      } else {
-        showProgressNotification(ctx, nm);
-      }
-      return;
-    }
-
-    if (!sessionActive && (isUploading || !isDone)) {
-      totalStarted = 0;
-      totalCompleted = 0;
-      everSeenIds.clear();
-      countedIds.clear();
-      sessionActive = true;
-      startService(ctx);
-    }
-
-    if (!everSeenIds.contains(file.id) && file.size > 0) {
-      everSeenIds.add(file.id);
-      totalStarted++;
-    }
-
-    activeFiles.put(file.id, file);
-
-    long now = System.currentTimeMillis();
-    long last = lastUpdateTime.get(file.id, 0L);
-    if (now - last < UPDATE_INTERVAL_MS) return;
-    lastUpdateTime.put(file.id, now);
-
-    showProgressNotification(ctx, nm);
-
-    // Timeout: se não houver atualização por 8s, força concluído
-    handler.removeCallbacksAndMessages("timeout");
-    handler.postAtTime(() -> {
-      if (sessionActive && activeFiles.size() > 0) {
-        Context c = UI.getAppContext();
-        if (c == null) return;
-        NotificationManager n = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (n == null) return;
-        int completed = totalCompleted + activeFiles.size();
-        countedIds.clear();
-        everSeenIds.clear();
-        activeFiles.clear();
-        lastUpdateTime.clear();
-        totalStarted = 0;
-        totalCompleted = 0;
-        sessionActive = false;
-        stopService(c);
-        showDoneNotification(c, n, completed);
-      }
-    }, "timeout", android.os.SystemClock.uptimeMillis() + 300000);
-  }
-
-  private void showProgressNotification (Context ctx, NotificationManager nm) {
-    if (activeFiles.size() == 0) return;
-
-    TdApi.File currentFile = null;
-    for (int i = 0; i < activeFiles.size(); i++) {
-      TdApi.File f = activeFiles.valueAt(i);
-      if (currentFile == null || f.remote.uploadedSize > currentFile.remote.uploadedSize) {
-        currentFile = f;
-      }
-    }
-    if (currentFile == null) return;
-
-    long total = currentFile.size;
-    long uploaded = currentFile.remote.uploadedSize;
-    int progress = (total > 0) ? (int) (uploaded * 100L / total) : 0;
-
-    int faltam = totalStarted - totalCompleted;
-    int current = Math.min(totalStarted, totalCompleted + 1);
-    String title = faltam > 1
-      ? "Faltam " + faltam + " de " + totalStarted + " arquivos"
-      : "Enviando arquivo " + current + " de " + totalStarted + "...";
-    String text = progress + "% — " + formatSize(uploaded) + " / " + formatSize(total);
-
-    nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
-      android.R.drawable.stat_sys_upload, true, 100, progress));
-  }
-
-  private void showDoneNotification (Context ctx, NotificationManager nm, int completed) {
-    String title = "✅ Envio concluído!";
-    String text = completed + " arquivo(s) enviado(s) com sucesso";
-    nm.notify(NOTIF_ID, buildNotif(ctx, title, text,
-      android.R.drawable.stat_sys_upload_done, false, 0, 0));
-
-    dismissRunnable = () -> {
-      nm.cancel(NOTIF_ID);
-      dismissRunnable = null;
-    };
-    handler.postDelayed(dismissRunnable, DONE_DISMISS_MS);
-  }
-
-  private Notification buildNotif (Context ctx, String title, String text,
-      int icon, boolean ongoing, int progressMax, int progress) {
-    String channelId = CHANNEL_ID;
-    Intent openIntent = new Intent(ctx, MainActivity.class);
-    openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-    int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-      ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-      : PendingIntent.FLAG_UPDATE_CURRENT;
-    PendingIntent pi = PendingIntent.getActivity(ctx, 0, openIntent, piFlags);
-
-    NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, channelId)
-      .setSmallIcon(icon)
-      .setContentTitle(title)
-      .setContentText(text)
-      .setOngoing(ongoing)
-      .setOnlyAlertOnce(true)
-      .setAutoCancel(!ongoing)
-      .setContentIntent(pi)
-      .setPriority(NotificationCompat.PRIORITY_LOW);
-
-    if (progressMax > 0) {
-      builder.setProgress(progressMax, progress, false);
-    }
-    return builder.build();
-  }
-
-  private static String formatSize (long bytes) {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
-    return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
   }
 }

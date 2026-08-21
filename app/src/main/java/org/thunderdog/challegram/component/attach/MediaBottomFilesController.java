@@ -142,6 +142,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           refreshCurrentFolder();
         } else if (optionId == R.id.btn_toggleHidden) {
           showHiddenFiles = !showHiddenFiles;
+          if (showHiddenFiles && !context.permissions().canManageStorage()) {
+            if (context.permissions().requestManageStorage(mediaLayout.getContext())) {
+              return true;
+            }
+          }
           refreshCurrentFolder();
         }
         return true;
@@ -149,9 +154,18 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     }
   }
 
-  // Ordenação: 0=data desc (padrão), 1=nome asc, 2=nome desc, 3=tipos asc, 4=tipos desc
-  private int sortMode = 1;
+  // Ordenação: 0=data desc, 1=nome asc, 2=nome desc, 3=tipos asc, 4=tipos desc.
+  // A-Z é o padrão para facilitar a identificação durante uploads.
+  private static final int DEFAULT_SORT_MODE = 1;
+  private int sortMode = DEFAULT_SORT_MODE;
   private boolean showHiddenFiles = false;
+
+  public void onStoragePermissionResult (boolean granted) {
+    if (!granted) {
+      showHiddenFiles = false;
+    }
+    refreshCurrentFolder();
+  }
 
   private void refreshCurrentFolder () {
     if (stack.isEmpty()) {
@@ -745,7 +759,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     return new LoadOperation(this) {
       @Override
       public Result act () {
-        Media.Gallery gallery = Media.instance().getGallery();
+        Media.Gallery gallery = Media.instance().getGallery(showHiddenFiles);
 
         if (gallery == null) {
           openAlert(this, R.string.AppName, R.string.AccessError);
@@ -802,39 +816,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           }
         }
 
-        // Mostra pastas com .nomedia se ativado
-        if (showHiddenFiles) {
-          String[] basePaths = {
-            android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/Pictures",
-            android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/Download/1DMP"
-          };
-          boolean addedHiddenHeader = false;
-          for (String basePath : basePaths) {
-            java.io.File baseDir = new java.io.File(basePath);
-            if (!baseDir.exists() || !baseDir.isDirectory()) continue;
-            java.io.File[] dirs = baseDir.listFiles();
-            if (dirs == null) continue;
-            for (java.io.File dir : dirs) {
-              if (!dir.isDirectory()) continue;
-              if (dir.getName().startsWith("DUMMY_IGNORE")) continue;
-              java.io.File nomedia = new java.io.File(dir, ".nomedia");
-              if (!nomedia.exists()) continue;
-              java.io.File[] files = dir.listFiles();
-              int count = 0;
-              if (files != null) {
-                for (java.io.File f : files) {
-                  if (!f.getName().equals(".nomedia")) count++;
-                }
-              }
-              if (!addedHiddenHeader) {
-                items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ShowHiddenFiles));
-                addedHiddenHeader = true;
-              }
-              InlineResultCommon folderResult = new InlineResultCommon(context, tdlib, KEY_FOLDER + dir.getAbsolutePath(), ColorId.fileAttach, R.drawable.baseline_folder_24, dir.getName(), Lang.plural(R.string.xFiles, count)).setDisableProgressInteract(true);
-              items.add(createItem(folderResult, R.id.btn_folder));
-            }
-          }
-        }
+        // Pastas .nomedia entram pela mesma Gallery retornada acima quando o modo ocultos está ativo.
 
         if (!items.isEmpty()) {
           return new Result(items, true);
@@ -1070,47 +1052,18 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             return null;
           }
 
-          boolean isHiddenFolder = showHiddenFiles && (
-            path.startsWith("/sdcard/Pictures") ||
-            path.startsWith("/sdcard/Download/1DMP") ||
-            path.startsWith("/storage/emulated/0/Pictures") ||
-            path.startsWith("/storage/emulated/0/Download/1DMP")
-          );
-
           ArrayList<File> filesList = new ArrayList<>();
-
-          if (isHiddenFolder) {
-            // Usa MediaStore para listar arquivos em pastas com .nomedia
-            android.database.Cursor cursor = null;
-            try {
-              String[] projection = { android.provider.MediaStore.Files.FileColumns.DATA };
-              String selection = android.provider.MediaStore.Files.FileColumns.DATA + " LIKE ?";
-              String[] selectionArgs = { path + "/%" };
-              cursor = UI.getAppContext().getContentResolver().query(
-                android.provider.MediaStore.Files.getContentUri("external"),
-                projection, selection, selectionArgs, null
-              );
-              if (cursor != null) {
-                while (cursor.moveToNext()) {
-                  String filePath = cursor.getString(0);
-                  if (filePath != null) {
-                    File f = new File(filePath);
-                    // Só arquivos diretos (não subpastas)
-                    if (f.getParentFile() != null && f.getParentFile().getAbsolutePath().equals(path)) {
-                      if (!f.getName().equals(".nomedia")) filesList.add(f);
-                    }
-                  }
-                }
+          File[] files = dir.listFiles();
+          if (files != null) {
+            for (File file : files) {
+              String name = file.getName();
+              if (".nomedia".equalsIgnoreCase(name)) {
+                continue;
               }
-            } finally {
-              if (cursor != null) cursor.close();
-            }
-          } else {
-            File[] files = dir.listFiles();
-            if (files == null) files = new File[0];
-            for (File f : files) {
-              if (!showHiddenFiles && f.getName().startsWith(".")) continue;
-              filesList.add(f);
+              if (!showHiddenFiles && name.startsWith(".")) {
+                continue;
+              }
+              filesList.add(file);
             }
           }
           Collections.sort(filesList, MediaBottomFilesController.this);

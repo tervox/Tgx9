@@ -1,211 +1,93 @@
-import sys
-import re
+from pathlib import Path
+from xml.sax.saxutils import escape
 
-# ── strings.xml ──────────────────────────────────────────────────────────────
-strings_path = 'tgx/app/src/main/res/values/strings.xml'
-content = open(strings_path).read()
 
-new_strings = [
-    ('OpenSystemFilePicker', 'Open file picker'),
-    ('SortBy', 'Ordenar por'),
-    ('SortByName', 'Ordenar'),
-    ('SortDateDesc', 'Data (mais recente)'),
-    ('SortNameAsc', 'Nome (A-Z)'),
-    ('SortNameDesc', 'Nome (Z-A)'),
-    ('SortTypeAsc', 'Tipos (A-Z)'),
-    ('SortTypeDesc', 'Tipos (Z-A)'),
-    ('SortGroupPhotos', 'Fotos'),
-    ('SortGroupVideos', 'Videos'),
-    ('SortGroupGifs', 'GIFs'),
-    ('SortGroupAudio', 'Audios'),
-    ('SortGroupOther', 'Outros'),
-    ('Refresh', 'Atualizar'),
-    ('ShowHiddenFiles', 'Mostrar ocultos'),
-    ('HideHiddenFiles', 'Ocultar ocultos'),
-    ('UploadProgressNotificationChannel', 'Upload em andamento'),
-]
+def ensure_xml_item(path: Path, item: str, marker: str, label: str) -> None:
+    content = path.read_text(encoding="utf-8")
+    if marker in content:
+        print(f"SKIP: {label} already exists")
+        return
+    closing = "</resources>"
+    if closing not in content:
+        raise RuntimeError(f"{path}: </resources> not found")
+    path.write_text(content.replace(closing, f"{item}\n{closing}", 1), encoding="utf-8")
+    print(f"OK: added {label}")
 
-for name, value in new_strings:
-    if f'name="{name}"' not in content:
-        content = content.replace('</resources>', f'  <string name="{name}">{value}</string>\n</resources>')
-        print(f'OK: added string {name}')
-    else:
-        print(f'SKIP: string {name} already exists')
 
-open(strings_path, 'w').write(content)
+# Recursos usados pelas alterações já copiadas integralmente para o projeto base.
+strings = {
+    "OpenSystemFilePicker": "Abrir seletor do sistema",
+    "SortByName": "Ordenar",
+    "Refresh": "Atualizar",
+    "ShowHiddenFiles": "Mostrar ocultos",
+    "HideHiddenFiles": "Ocultar ocultos",
+    "SortBy": "Ordenar por",
+    "SortDateDesc": "Data (mais recente)",
+    "SortNameAsc": "Nome (A-Z)",
+    "SortNameDesc": "Nome (Z-A)",
+    "SortTypeAsc": "Tipos (A-Z)",
+    "SortTypeDesc": "Tipos (Z-A)",
+    "SortGroupPhotos": "Fotos",
+    "SortGroupVideos": "Vídeos",
+    "SortGroupGifs": "GIFs",
+    "SortGroupAudio": "Áudios",
+    "SortGroupOther": "Outros",
+    "UploadProgressNotificationChannel": "Uploads em andamento",
+    "UploadNotificationTitle": "Enviando arquivos",
+    "UploadNotificationPreparing": "Preparando %1$d arquivo(s)…",
+    "UploadNotificationProgress": "%1$d de %2$d concluído(s) — falta(m) %3$d",
+    "UploadNotificationCurrent": "Arquivo %1$d de %2$d — %3$d%%",
+    "UploadNotificationDone": "Envio concluído",
+    "UploadNotificationDoneText": "%1$d arquivo(s) enviado(s) com sucesso",
+}
 
-# ── ids.xml ───────────────────────────────────────────────────────────────────
-ids_path = 'tgx/app/src/main/res/values/ids.xml'
-content_ids = open(ids_path).read()
+strings_path = Path("tgx/app/src/main/res/values/strings.xml")
+content = strings_path.read_text(encoding="utf-8")
+for name, value in strings.items():
+    marker = f'name="{name}"'
+    if marker in content:
+        print(f"SKIP: string {name} already exists")
+        continue
+    item = f'  <string name="{name}">{escape(value)}</string>'
+    closing = "</resources>"
+    if closing not in content:
+        raise RuntimeError(f"{strings_path}: </resources> not found")
+    content = content.replace(closing, f"{item}\n{closing}", 1)
+    print(f"OK: added string {name}")
+strings_path.write_text(content, encoding="utf-8")
 
-new_ids = [
-    'btn_showInFiles', 'btn_sortByName', 'btn_sortDateDesc', 'btn_sortNameAsc',
-    'btn_sortNameDesc', 'btn_sortTypeAsc', 'btn_sortTypeDesc', 'btn_refresh', 'btn_toggleHidden',
-]
-
-for id_name in new_ids:
-    if f'name="{id_name}"' not in content_ids:
-        content_ids = content_ids.replace('</resources>', f'  <item type="id" name="{id_name}" />\n</resources>')
-        print(f'OK: added id {id_name}')
-    else:
-        print(f'SKIP: id {id_name} already exists')
-
-open(ids_path, 'w').write(content_ids)
-
-# ── Fix drawable ──────────────────────────────────────────────────────────────
-java_path = 'tgx/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java'
-java_content = open(java_path).read()
-replaced = False
-for bad in ['baseline_sort_by_alpha_24', 'baseline_filter_list_24']:
-    if bad in java_content:
-        java_content = java_content.replace(bad, 'baseline_settings_24')
-        replaced = True
-        print(f'OK: replaced {bad}')
-if replaced:
-    open(java_path, 'w').write(java_content)
-else:
-    print('SKIP: no bad drawables found')
-
-# ── AndroidManifest permissions ───────────────────────────────────────────────
-manifest_path = 'tgx/app/src/main/AndroidManifest.xml'
-manifest = open(manifest_path).read()
-
-perms = [
-    'android.permission.MANAGE_EXTERNAL_STORAGE',
-    'android.permission.READ_EXTERNAL_STORAGE',
-    'android.permission.WRITE_EXTERNAL_STORAGE',
-    'android.permission.FOREGROUND_SERVICE',
-    'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
-    'android.permission.WAKE_LOCK',
-    'android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE',
-    'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
-    'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
-    'android.permission.REQUEST_INSTALL_PACKAGES',
-    'android.permission.RECEIVE_BOOT_COMPLETED',
-]
-
-for perm in perms:
-    tag = f'<uses-permission android:name="{perm}"'
-    if tag not in manifest:
-        manifest = manifest.replace('<application', f'{tag} />\n    <application', 1)
-        print(f'OK: added {perm}')
-    else:
-        print(f'SKIP: {perm} already exists')
-
-# UploadService
-service_tag = '<service android:name="org.thunderdog.challegram.telegram.UploadNotificationManager$UploadService" android:foregroundServiceType="dataSync|connectedDevice" android:exported="false" android:stopWithTask="false" />'
-if service_tag not in manifest:
-    manifest = manifest.replace('</application>', f'    {service_tag}\n</application>')
-    print('OK: UploadService registered')
-else:
-    print('SKIP: UploadService already registered')
-
-open(manifest_path, 'w').write(manifest)
-
-# ── Remover aviso experimental ────────────────────────────────────────────────
-gradle_path = 'tgx/app/build.gradle.kts'
-gradle = open(gradle_path).read()
-old_exp = 'buildConfigField("boolean", "EXPERIMENTAL", config.isExperimentalBuild.toString())'
-new_exp = 'buildConfigField("boolean", "EXPERIMENTAL", "false")'
-if old_exp in gradle:
-    gradle = gradle.replace(old_exp, new_exp)
-    open(gradle_path, 'w').write(gradle)
-    print('OK: EXPERIMENTAL=false')
-else:
-    print('SKIP: EXPERIMENTAL already patched')
-
-# ── Forcar Animation como Video para lotes ────────────────────────────────────
-td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
-td = open(td_path).read()
-
-old1 = '                if (allowAnimation && durationMs < TimeUnit.SECONDS.toMillis(30) && info.knownSize < ByteUnit.MB.toBytes(10) && numTracks == 1) {\n                  return new TdApi.InputMessageAnimation(inputFile, null, null, (int) TimeUnit.MILLISECONDS.toSeconds(durationMs), width, height, caption, showCaptionAboveMedia, hasSpoiler);\n                } else if (allowVideo && durationMs > 0) {'
-new1 = '                if (allowVideo && durationMs > 0) {'
-
-old2 = '                if (allowAnimation && durationMs < TimeUnit.SECONDS.toMillis(30) && info.knownSize < ByteUnit.MB.toBytes(10) && !metadata.hasAudio) {\n                  return new TdApi.InputMessageAnimation(inputFile, null, null, (int) TimeUnit.MILLISECONDS.toSeconds(durationMs), videoWidth, videoHeight, caption, showCaptionAboveMedia, hasSpoiler);\n                } else if (allowVideo && durationMs > 0) {'
-new2 = '                if (allowVideo && durationMs > 0) {'
-
-changed = False
-if old1 in td:
-    td = td.replace(old1, new1)
-    changed = True
-    print('OK: Animation->Video (content uri)')
-else:
-    print('SKIP: pattern 1 not found')
-
-if old2 in td:
-    td = td.replace(old2, new2)
-    changed = True
-    print('OK: Animation->Video (file path)')
-else:
-    print('SKIP: pattern 2 not found')
-
-if changed:
-    open(td_path, 'w').write(td)
-
-# ── Register UploadService ────────────────────────────────────────────────────
-print('patch_files.py done!')
-
-# ── Forcar .m4v como video/mp4 no TD.java ────────────────────────────────────
-td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
-td = open(td_path).read()
-
-old_m4v = '  public static TdApi.InputMessageContent toInputMessageContent (String filePath, TdApi.InputFile inputFile, @NonNull FileInfo info, TdApi.FormattedText caption, boolean allowAudio, boolean allowAnimation, boolean allowVideo, boolean allowDocs, boolean showCaptionAboveMedia, boolean hasSpoiler) {'
-new_m4v = '''  public static TdApi.InputMessageContent toInputMessageContent (String filePath, TdApi.InputFile inputFile, @NonNull FileInfo info, TdApi.FormattedText caption, boolean allowAudio, boolean allowAnimation, boolean allowVideo, boolean allowDocs, boolean showCaptionAboveMedia, boolean hasSpoiler) {
-    // Copia .m4v como .mp4 para forcar envio como video
-    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {
-      info.mimeType = "video/mp4";
-    }'''
-
-if old_m4v in td:
-    td = td.replace(old_m4v, new_m4v, 1)
-    open(td_path, 'w').write(td)
-    print('OK: .m4v copiado como .mp4')
-else:
-    print('SKIP: pattern not found')
-
-# ── Forcar WEBP animado como Animation ───────────────────────────────────────
-td_path = 'tgx/app/src/main/java/org/thunderdog/challegram/data/TD.java'
-td = open(td_path).read()
-
-old_webp = '    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {'
-new_webp = '''    if (filePath != null && filePath.toLowerCase().endsWith(".webp")) {
-      // Detecta se WEBP é animado
-      try {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-          android.graphics.ImageDecoder.Source src = android.graphics.ImageDecoder.createSource(new java.io.File(filePath));
-          android.graphics.drawable.Drawable d = android.graphics.ImageDecoder.decodeDrawable(src);
-          if (d instanceof android.graphics.drawable.AnimatedImageDrawable) {
-            // Acima de 10MB envia como video, abaixo como GIF
-            java.io.File wf = new java.io.File(filePath);
-            if (wf.length() > 10 * 1024 * 1024) {
-              info.mimeType = "video/mp4";
-            } else {
-              info.mimeType = "image/gif";
-            }
-          }
-        }
-      } catch (Throwable ignored) {}
-    }
-    if (filePath != null && filePath.toLowerCase().endsWith(".m4v")) {'''
-
-if old_webp in td:
-    td = td.replace(old_webp, new_webp, 1)
-    open(td_path, 'w').write(td)
-    print('OK: WEBP mime type forcado')
-else:
-    print('SKIP: pattern not found')
-
-# ── Manter app visível em segundo plano durante upload ───────────────────────
-manifest_path = 'tgx/app/src/main/AndroidManifest.xml'
-manifest = open(manifest_path).read()
-
-# Adiciona flag para manter processo ativo
-if 'android:persistent="true"' not in manifest:
-    manifest = manifest.replace(
-        'android:name="org.thunderdog.challegram.MainActivity"',
-        'android:name="org.thunderdog.challegram.MainActivity" android:excludeFromRecents="false" android:alwaysRetainTaskState="true"'
+ids_path = Path("tgx/app/src/main/res/values/ids.xml")
+id_names = (
+    "btn_showInFiles",
+    "btn_sortByName",
+    "btn_sortDateDesc",
+    "btn_sortNameAsc",
+    "btn_sortNameDesc",
+    "btn_sortTypeAsc",
+    "btn_sortTypeDesc",
+    "btn_refresh",
+    "btn_toggleHidden",
+)
+for name in id_names:
+    ensure_xml_item(
+        ids_path,
+        f'  <item type="id" name="{name}" />',
+        f'name="{name}"',
+        f"id {name}",
     )
-    open(manifest_path, 'w').write(manifest)
-    print('OK: Activity configurada para segundo plano')
+
+# Compatibilidade com instalações da revisão que ainda usam esses nomes de drawable.
+controller_path = Path("tgx/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java")
+controller = controller_path.read_text(encoding="utf-8")
+changed = False
+for old_name in ("baseline_sort_by_alpha_24", "baseline_filter_list_24"):
+    if old_name in controller:
+        controller = controller.replace(old_name, "baseline_settings_24")
+        changed = True
+        print(f"OK: replaced {old_name}")
+if changed:
+    controller_path.write_text(controller, encoding="utf-8")
 else:
-    print('SKIP: já configurado')
+    print("SKIP: no bad drawables found")
+
+print("patch_files.py done")
