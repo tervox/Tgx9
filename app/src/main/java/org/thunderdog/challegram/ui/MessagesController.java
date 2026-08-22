@@ -10398,6 +10398,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return path != null && path.length() >= 4 && path.regionMatches(true, path.length() - 4, ".gif", 0, 4);
   }
 
+  private static boolean isVideoFile (ImageGalleryFile file) {
+    if (file == null) {
+      return false;
+    }
+    String mimeType = file.getVideoMimeType();
+    if (mimeType != null && mimeType.regionMatches(true, 0, "video/", 0, 6)) {
+      return true;
+    }
+    String path = file.getFilePath();
+    if (path == null) {
+      return false;
+    }
+    String lowerPath = path.toLowerCase(java.util.Locale.US);
+    return lowerPath.endsWith(".mp4") || lowerPath.endsWith(".mkv") || lowerPath.endsWith(".mov") ||
+      lowerPath.endsWith(".webm") || lowerPath.endsWith(".avi") || lowerPath.endsWith(".3gp") ||
+      lowerPath.endsWith(".m4v") || lowerPath.endsWith(".ts") || lowerPath.endsWith(".mts") ||
+      lowerPath.endsWith(".m2ts") || lowerPath.endsWith(".flv");
+  }
+
   private static TdApi.InputMessageContent[] moveNonMediaAfterMedia (TdApi.InputMessageContent[] content) {
     if (content == null || content.length < 2) {
       return content;
@@ -10453,7 +10472,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         if (file.getSelfDestructType() != null && asFiles)
           throw new IllegalArgumentException();
         TdApi.InputMessageContent content;
-        if (file.isVideo()) {
+        if (file.isVideo() || isVideoFile(file)) {
           boolean sendAsAnimation = file.shouldMuteVideo();
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
             MediaMetadataRetriever retriever = null;
@@ -10493,17 +10512,15 @@ public class MessagesController extends ViewController<MessagesController.Argume
               } catch (Throwable ignored) { }
             }
             long duration = file.getVideoDuration(true);
-            if (duration > 0 && width > 0 && height > 0 && knownSize > 0) {
-              if (isGifFile(file) && duration < 30000L && knownSize < 10L * 1024L * 1024L) {
-                content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, (int) (duration / 1000L), width, height, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
-              } else {
-                content = tdlib.filegen().createThumbnail(new TdApi.InputMessageVideo(inputVideo, null, null, 0, null, (int) (duration / 1000L), width, height, U.canStreamVideo(inputVideo), caption, showCaptionAboveMedia, null, hasSpoiler), isSecretChat);
-              }
+            int safeWidth = Math.max(1, width);
+            int safeHeight = Math.max(1, height);
+            int durationSeconds = (int) Math.max(0L, duration / 1000L);
+            if (isGifFile(file) && duration > 0L && knownSize > 0L && duration < 30000L && knownSize < 10L * 1024L * 1024L) {
+              content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, durationSeconds, safeWidth, safeHeight, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
             } else {
-              // Preserve the original metadata fallback for provider URIs or incomplete MediaStore rows.
-              // Never infer Animation from silence/mute here: ordinary silent videos
-              // must remain videos so they can stay in the same media album.
-              content = tdlib.filegen().createThumbnail(TD.toInputMessageContent(file.getFilePath(), inputVideo, fileInfo, caption, true, false, true, true, showCaptionAboveMedia, hasSpoiler), isSecretChat);
+              // An original-quality video must never fall back to InputMessageDocument
+              // merely because a provider did not expose duration or dimensions.
+              content = tdlib.filegen().createThumbnail(new TdApi.InputMessageVideo(inputVideo, null, null, 0, null, durationSeconds, safeWidth, safeHeight, U.canStreamVideo(inputVideo), caption, showCaptionAboveMedia, null, hasSpoiler), isSecretChat);
             }
           } else if (sendAsAnimation && file.getSelfDestructType() == null && (files.length == 1 || !needGroupMedia)) {
             content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, file.getVideoDuration(true), width, height, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
