@@ -58,12 +58,15 @@ public final class UploadNotificationManager {
   private final HashMap<Integer, TdApi.File> activeFiles = new HashMap<>();
   private final HashSet<Integer> startedFileIds = new HashSet<>();
   private final HashSet<Integer> completedFileIds = new HashSet<>();
+  private final HashSet<String> completedMessageKeys = new HashSet<>();
 
   private Tdlib activeTdlib;
   private PowerManager.WakeLock wakeLock;
   private boolean sessionActive;
+  private boolean messageCompletionMode;
   private int expectedCount;
   private int completedCount;
+  private long batchStartUptime;
   private long lastEventUptime;
   private long lastRefreshUptime;
   private boolean refreshPosted;
@@ -73,23 +76,25 @@ public final class UploadNotificationManager {
 
   private UploadNotificationManager () { }
 
-  /** Counts local media represented by SendMessage/SendMessageAlbum functions. */
+  /** Counts only media in the actual send functions; thumbnails and fields
+   * from unrelated TDLib functions must never increase the batch total. */
   public static int countUploadItems (List<TdApi.Function<?>> functions) {
     if (functions == null || functions.isEmpty()) {
       return 0;
     }
     int count = 0;
     for (TdApi.Function<?> function : functions) {
-      Object single = readField(function, "inputMessageContent");
-      if (isUploadContent(single)) {
-        count++;
-      }
-      Object album = readField(function, "inputMessageContents");
-      if (album != null && album.getClass().isArray()) {
-        int length = Array.getLength(album);
-        for (int i = 0; i < length; i++) {
-          if (isUploadContent(Array.get(album, i))) {
-            count++;
+      if (function instanceof TdApi.SendMessage) {
+        if (isUploadContent(((TdApi.SendMessage) function).inputMessageContent)) {
+          count++;
+        }
+      } else if (function instanceof TdApi.SendMessageAlbum) {
+        TdApi.InputMessageContent[] contents = ((TdApi.SendMessageAlbum) function).inputMessageContents;
+        if (contents != null) {
+          for (TdApi.InputMessageContent content : contents) {
+            if (isUploadContent(content)) {
+              count++;
+            }
           }
         }
       }
@@ -121,6 +126,22 @@ public final class UploadNotificationManager {
     }
   }
 
+  private static boolean isUploadMessage (TdApi.Message message) {
+    if (message == null || message.content == null) {
+      return false;
+    }
+    switch (message.content.getConstructor()) {
+      case TdApi.MessagePhoto.CONSTRUCTOR:
+      case TdApi.MessageVideo.CONSTRUCTOR:
+      case TdApi.MessageAnimation.CONSTRUCTOR:
+      case TdApi.MessageDocument.CONSTRUCTOR:
+      case TdApi.MessageAudio.CONSTRUCTOR:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   public void beginBatch (int total, Tdlib tdlib) {
     if (total <= 0) {
       return;
@@ -130,13 +151,24 @@ public final class UploadNotificationManager {
       return;
     }
     synchronized (lock) {
+      final long now = SystemClock.uptimeMillis();
+      if (sessionActive && completedCount >= expectedCount && activeFiles.isEmpty()) {
+        sessionActive = false;
+      }
       if (!sessionActive) {
         activeFiles.clear();
         startedFileIds.clear();
         completedFileIds.clear();
+        completedMessageKeys.clear();
         expectedCount = 0;
         completedCount = 0;
+        messageCompletionMode = true;
+        batchStartUptime = now;
         sessionActive = true;
+      } else if (expectedCount == total && completedCount == 0 && activeFiles.isEmpty() && now - batchStartUptime < 2000) {
+        // The same send pipeline can reach this method twice before TDLib
+        // emits its first UpdateFile. Do not turn one batch into two.
+        return;
       }
       expectedCount += total;
       if (tdlib != null) {
@@ -185,15 +217,17 @@ public final class UploadNotificationManager {
         activeTdlib = tdlib;
       }
       if (uploading) {
-        if (startedFileIds.add(file.id) && expectedCount < startedFileIds.size()) {
+        if (startedFileIds.add(file.id) && !messageCompletionMode && expectedCount < startedFileIds.size()) {
           expectedCount = startedFileIds.size();
         }
         activeFiles.put(file.id, file);
       }
       if (completed && !uploading) {
         activeFiles.remove(file.id);
-        if (completedFileIds.add(file.id)) {
-          completedCount++;
+        // UpdateFile also covers thumbnails and generated conversion files.
+        // Registered send batches are completed by message updates instead.
+        if (!messageCompletionMode && completedFileIds.add(file.id)) {
+          completedCount = Math.min(expectedCount, completedCount + 1);
         }
       }
       lastEventUptime = SystemClock.uptimeMillis();
@@ -213,6 +247,55 @@ public final class UploadNotificationManager {
     });
   }
 
+  private void onMessageTerminal (TdApi.Message message, long oldMessageId, Tdlib tdlib) {
+    if (!isUploadMessage(message)) {
+      return;
+    }
+    Context context = UI.getAppContext();
+    if (context == null) {
+      return;
+    }
+    boolean shouldFinish = false;
+    synchronized (lock) {
+      if (!sessionActive || !messageCompletionMode) {
+        return;
+      }
+      String key = message.chatId + ":" + oldMessageId + ":" + message.id;
+      if (!completedMessageKeys.add(key)) {
+        return;
+      }
+      if (tdlib != null) {
+        activeTdlib = tdlib;
+      }
+      completedCount = Math.min(expectedCount, completedCount + 1);
+      lastEventUptime = SystemClock.uptimeMillis();
+      cancelFinishLocked();
+      scheduleIdleCheckLocked(context);
+      scheduleRecoveryLocked();
+      shouldFinish = completedCount >= expectedCount;
+      if (shouldFinish) {
+        scheduleFinishLocked(context);
+      }
+    }
+    handler.post(() -> {
+      startUploadService(context);
+      acquireWakeLock(context);
+      postProgressNotification(context);
+    });
+  }
+
+  public void onMessageSendSucceeded (TdApi.UpdateMessageSendSucceeded update, Tdlib tdlib) {
+    if (update != null) {
+      onMessageTerminal(update.message, update.oldMessageId, tdlib);
+    }
+  }
+
+  public void onMessageSendFailed (TdApi.UpdateMessageSendFailed update, Tdlib tdlib) {
+    if (update != null) {
+      onMessageTerminal(update.message, update.oldMessageId, tdlib);
+    }
+  }
+
   public boolean hasActiveSession () {
     synchronized (lock) {
       return sessionActive;
@@ -226,8 +309,11 @@ public final class UploadNotificationManager {
       activeFiles.clear();
       startedFileIds.clear();
       completedFileIds.clear();
+      completedMessageKeys.clear();
       expectedCount = 0;
       completedCount = 0;
+      messageCompletionMode = false;
+      batchStartUptime = 0;
       activeTdlib = null;
       cancelFinishLocked();
       cancelIdleLocked();
@@ -309,7 +395,7 @@ public final class UploadNotificationManager {
     int completed;
     Tdlib tdlib;
     synchronized (lock) {
-      if (!sessionActive || !activeFiles.isEmpty() || completedCount < expectedCount) {
+      if (!sessionActive || completedCount < expectedCount || (!messageCompletionMode && !activeFiles.isEmpty())) {
         return;
       }
       completed = completedCount;
@@ -318,8 +404,11 @@ public final class UploadNotificationManager {
       activeFiles.clear();
       startedFileIds.clear();
       completedFileIds.clear();
+      completedMessageKeys.clear();
       expectedCount = 0;
       completedCount = 0;
+      messageCompletionMode = false;
+      batchStartUptime = 0;
       activeTdlib = null;
       finishRunnable = null;
       cancelIdleLocked();

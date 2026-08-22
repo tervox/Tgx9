@@ -229,7 +229,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   private int getFileGroup (File f) {
-    String name = f.getName().toLowerCase();
+    return getFileGroup(f != null ? f.getName() : "");
+  }
+
+  private int getFileGroup (String fileName) {
+    String name = fileName != null ? fileName.toLowerCase(java.util.Locale.ROOT) : "";
     if (name.endsWith(".gif")) return 2;
     if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".bmp") || name.endsWith(".heic")) return 0;
     if (name.endsWith(".mp4") || name.endsWith(".mkv") || name.endsWith(".mov") || name.endsWith(".avi") || name.endsWith(".webm") || name.endsWith(".flv") || name.endsWith(".wmv") || name.endsWith(".mp4") || name.endsWith(".3gp") || name.endsWith(".m4v")) return 1;
@@ -250,6 +254,10 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private String getGalleryFileName (ImageFile file) {
     String path = file != null ? file.getFilePath() : null;
     if (path == null) return "";
+    String displayName = Media.instance().getGalleryDisplayName(path);
+    if (!StringUtils.isEmpty(displayName)) {
+      return displayName.toLowerCase(java.util.Locale.ROOT);
+    }
     int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
     return (slash >= 0 ? path.substring(slash + 1) : path).toLowerCase(java.util.Locale.ROOT);
   }
@@ -261,7 +269,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     if (sortMode == 0) return a.compareTo(b);
     int typeCompare = 0;
     if (sortMode == 3 || sortMode == 4) {
-      typeCompare = Integer.compare(getFileGroup(new File(a.getFilePath())), getFileGroup(new File(b.getFilePath())));
+      typeCompare = Integer.compare(getFileGroup(getGalleryFileName(a)), getFileGroup(getGalleryFileName(b)));
       if (sortMode == 4) typeCompare = -typeCompare;
     }
     if (typeCompare != 0) return typeCompare;
@@ -1372,7 +1380,17 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   public static InlineResultCommon createItem (BaseActivity context, Tdlib tdlib, ImageGalleryFile file) {
-    return createItem(context, tdlib, new File(file.getFilePath()), file, null, file.getDateTaken(), null, false);
+    String path = file != null ? file.getFilePath() : null;
+    if (path != null && path.startsWith("content://")) {
+      TD.FileInfo info = new TD.FileInfo();
+      TD.createInputFile(path, null, info);
+      String title = !StringUtils.isEmpty(info.title) ? info.title : Uri.parse(path).getLastPathSegment();
+      long size = info.knownSize;
+      String subtitle = size > 0 ? Lang.getFileTimestamp(file.getDateTaken(), TimeUnit.MILLISECONDS, size) : Lang.getString(R.string.File);
+      int icon = file.isVideo() ? R.drawable.baseline_videocam_24 : R.drawable.baseline_image_24;
+      return new InlineResultCommon(context, tdlib, path, ColorId.fileAttach, icon, title, subtitle).setDisableProgressInteract(true);
+    }
+    return createItem(context, tdlib, new File(path), file, null, file.getDateTaken(), null, false);
   }
 
   public static InlineResultCommon createItem (BaseActivity context, Tdlib tdlib, String path, int iconRes, String title, String subtitle) {

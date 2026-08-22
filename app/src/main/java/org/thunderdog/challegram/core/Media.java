@@ -83,6 +83,7 @@ public class Media {
   private Gallery galleryCache;
   private long galleryCacheUptime;
   private boolean galleryCacheIncludesNomedia;
+  private final HashMap<String, String> galleryDisplayNames = new HashMap<>();
 
   private Media () {
     thread = new MediaThread();
@@ -105,6 +106,21 @@ public class Media {
       galleryCache = null;
       galleryCacheUptime = 0;
       galleryCacheIncludesNomedia = false;
+      galleryDisplayNames.clear();
+    }
+  }
+
+  public String getGalleryDisplayName (String path) {
+    if (path == null) return null;
+    synchronized (galleryCacheLock) {
+      return galleryDisplayNames.get(path);
+    }
+  }
+
+  private void rememberGalleryDisplayName (String path, String name) {
+    if (path == null || StringUtils.isEmpty(name)) return;
+    synchronized (galleryCacheLock) {
+      galleryDisplayNames.put(path, name);
     }
   }
 
@@ -211,6 +227,7 @@ public class Media {
           MediaStore.Files.FileColumns.MEDIA_TYPE,
           MediaStore.Files.FileColumns.MIME_TYPE,
           MediaStore.Files.FileColumns.SIZE,
+          MediaStore.MediaColumns.DISPLAY_NAME,
 
           MediaStore.Images.ImageColumns._ID,
           MediaStore.Images.ImageColumns.DATA,
@@ -228,6 +245,7 @@ public class Media {
       } else {
         Collections.addAll(projectionList,
           MediaStore.Files.FileColumns.SIZE,
+          MediaStore.MediaColumns.DISPLAY_NAME,
           MediaStore.Images.ImageColumns._ID,
           MediaStore.Images.ImageColumns.DATA,
           MediaStore.Images.ImageColumns.DATE_MODIFIED,
@@ -249,6 +267,7 @@ public class Media {
           MediaStore.Files.FileColumns.MEDIA_TYPE,
           MediaStore.Files.FileColumns.MIME_TYPE,
           MediaStore.Files.FileColumns.SIZE,
+          MediaStore.MediaColumns.DISPLAY_NAME,
 
           MediaStore.Images.Media._ID,
           MediaStore.Images.Media.DATA,
@@ -265,6 +284,7 @@ public class Media {
       } else {
         projection = new String[] {
           MediaStore.Files.FileColumns.SIZE,
+          MediaStore.MediaColumns.DISPLAY_NAME,
           MediaStore.Images.Media._ID,
           MediaStore.Images.Media.DATA,
           DATE_COLUMN,
@@ -403,7 +423,19 @@ public class Media {
           knownPaths.add(file.getFilePath());
         }
       }
-      collectNomediaMedia(Environment.getExternalStorageDirectory(), hidden, knownPaths, new HashSet<String>(), 0);
+      Set<String> visited = new HashSet<>();
+      File primary = Environment.getExternalStorageDirectory();
+      collectNomediaMedia(primary, hidden, knownPaths, visited, 0);
+      String primaryPath = primary != null ? primary.getAbsolutePath() : null;
+      ArrayList<String> externalRoots = U.getExternalStorageDirectories(primaryPath, false);
+      if (externalRoots != null) {
+        for (String root : externalRoots) {
+          if (hidden.size() >= MAX_NOMEDIA_MEDIA) break;
+          if (root != null && !root.equals(primaryPath)) {
+            collectNomediaMedia(new File(root), hidden, knownPaths, visited, 0);
+          }
+        }
+      }
       if (hidden.isEmpty()) {
         return gallery;
       }
@@ -418,7 +450,7 @@ public class Media {
   private static final int MAX_NOMEDIA_MEDIA = 10000;
 
   private void collectNomediaMedia (File directory, ArrayList<ImageGalleryFile> output, Set<String> knownPaths, Set<String> visited, int depth) {
-    if (directory == null || output.size() >= MAX_NOMEDIA_MEDIA || depth > MAX_NOMEDIA_SCAN_DEPTH || !directory.isDirectory() || !directory.canRead()) {
+    if (directory == null || output.size() >= MAX_NOMEDIA_MEDIA || depth > MAX_NOMEDIA_SCAN_DEPTH || !directory.isDirectory()) {
       return;
     }
     String canonical;
@@ -453,10 +485,11 @@ public class Media {
   }
 
   private void addHiddenMediaFile (File file, ArrayList<ImageGalleryFile> output, Set<String> knownPaths) {
-    if (file == null || !file.isFile() || !file.canRead() || file.length() <= 0 || ".nomedia".equalsIgnoreCase(file.getName())) {
+    if (file == null || !file.isFile() || file.length() <= 0 || ".nomedia".equalsIgnoreCase(file.getName())) {
       return;
     }
     String path = file.getAbsolutePath();
+    rememberGalleryDisplayName(path, file.getName());
     if (knownPaths.contains(path) || !isGalleryMediaFile(file)) {
       return;
     }
@@ -490,9 +523,11 @@ public class Media {
     } finally {
       U.closeRetriever(retriever);
     }
-    if (width <= 0 || height <= 0) {
-      return;
-    }
+    // Some OEM MediaMetadataRetriever/ImageDecoder providers do not expose
+    // dimensions for valid files. Keep the media visible with a safe ratio;
+    // the actual thumbnail decoder will determine its final size later.
+    if (width <= 0) width = 1;
+    if (height <= 0) height = 1;
     long id = -Math.abs((long) path.hashCode());
     if (id == 0) id = Long.MIN_VALUE + output.size();
     ImageGalleryFile image = new ImageGalleryFile(id, path, file.lastModified(), width, height, id, true);
@@ -531,6 +566,7 @@ public class Media {
     final int mediaTypeColumn = c.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE);
     final int mimeTypeColumn = c.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE);
     final int sizeColumn = c.getColumnIndex(MediaStore.Files.FileColumns.SIZE);
+    final int displayNameColumn = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME);
 
     final int imageIdColumn,
       dataColumn,
@@ -587,6 +623,10 @@ public class Media {
         long imageId = U.getLongOrInt(c, imageIdColumn);
         final boolean isVideo = mediaTypeColumn != -1 && c.getInt(mediaTypeColumn) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO;
         final long providerSize = sizeColumn != -1 ? U.getLongOrInt(c, sizeColumn) : -1;
+        if (providerSize == 0) {
+          // Pending/deleted MediaStore rows can retain an ID but no payload.
+          continue;
+        }
         String path = dataColumn != -1 ? c.getString(dataColumn) : null;
         Uri mediaUri = isVideo ? MediaStore.Video.Media.getContentUri("external") : MediaStore.Images.Media.getContentUri("external");
         if (path == null || path.length() == 0) {
@@ -600,6 +640,11 @@ public class Media {
           } else if (providerSize == 0 || localFile.length() == 0) {
             continue;
           }
+        }
+        if (displayNameColumn != -1) {
+          try {
+            rememberGalleryDisplayName(path, c.getString(displayNameColumn));
+          } catch (Throwable ignored) { }
         }
         long dateTaken = U.getLongOrInt(c, dateColumn);
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {

@@ -7409,6 +7409,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   private void updateMessageSendSucceeded (TdApi.UpdateMessageSendSucceeded update) {
+    UploadNotificationManager.instance().onMessageSendSucceeded(update, this);
     synchronized (dataLock) {
       Settings.instance().updateScrollMessageId(accountId, update.message.chatId, update.oldMessageId, update.message.id);
     }
@@ -7430,6 +7431,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   private void updateMessageSendFailed (TdApi.UpdateMessageSendFailed update) {
+    UploadNotificationManager.instance().onMessageSendFailed(update, this);
     UI.showError(update.error);
     synchronized (dataLock) {
       Settings.instance().updateScrollMessageId(accountId, update.message.chatId, update.oldMessageId, update.message.id);

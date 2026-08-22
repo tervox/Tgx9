@@ -66,6 +66,7 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.util.StringList;
+import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntList;
 import org.thunderdog.challegram.v.RtlGridLayoutManager;
 
@@ -247,6 +248,10 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
   private String getGalleryFileName (ImageFile file) {
     String path = file != null ? file.getFilePath() : null;
     if (path == null) return "";
+    String displayName = Media.instance().getGalleryDisplayName(path);
+    if (!StringUtils.isEmpty(displayName)) {
+      return displayName.toLowerCase(java.util.Locale.ROOT);
+    }
     int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
     return (slash >= 0 ? path.substring(slash + 1) : path).toLowerCase(java.util.Locale.ROOT);
   }
@@ -566,22 +571,12 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
 
   @Override
   public void displayPhotosAndVideos (Cursor cursor, final boolean hasAccess) {
-    Log.i("Received gallery in %dms", SystemClock.uptimeMillis() - requestTime);
-    requestTime = SystemClock.uptimeMillis();
-    final Media.Gallery gallery = hasAccess && cursor != null && cursor.getCount() > 0 ? Media.instance().parseGallery(cursor, true, ImageFile.CENTER_CROP) : null;
-    Log.i("Parsed gallery in %dms", SystemClock.uptimeMillis() - requestTime);
-    UI.post(() -> {
-      if ((gallery == null || gallery.isEmpty()) /*&& !U.deviceHasAnyCamera(context())*/) {
-        setError(hasAccess);
-      } else {
-        setGallery(gallery);
-      }
-      if (onGalleryComplete != null) {
-        onGalleryComplete.run();
-        onGalleryComplete = null;
-      }
-      galleryLoaded = true;
-    });
+    // Legacy MediaThread callback. The controller now has one authoritative
+    // path (getGallery(boolean)), because the old direct parse omitted
+    // .nomedia media and could race with a refresh.
+    if (!galleryLoading && !galleryLoaded) {
+      refreshGallery();
+    }
   }
 
   private void setGallery (Media.Gallery gallery) {
