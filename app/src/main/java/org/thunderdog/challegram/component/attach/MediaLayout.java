@@ -666,6 +666,8 @@ public class MediaLayout extends FrameLayoutFix implements
         ViewController<?> currentController = getCurrentController();
         if (currentController instanceof MediaBottomFilesController) {
           ((MediaBottomFilesController) currentController).onStoragePermissionResult(granted);
+        } else if (currentController instanceof MediaBottomGalleryController) {
+          ((MediaBottomGalleryController) currentController).onStoragePermissionResult(granted);
         }
         if (requestedPermissionIndex == 1) {
           if (granted) {

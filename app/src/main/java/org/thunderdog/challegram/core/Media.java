@@ -449,7 +449,7 @@ public class Media {
   }
 
   private void addHiddenMediaFile (File file, ArrayList<ImageGalleryFile> output, Set<String> knownPaths) {
-    if (file == null || !file.isFile() || !file.canRead() || ".nomedia".equalsIgnoreCase(file.getName())) {
+    if (file == null || !file.isFile() || !file.canRead() || file.length() <= 0 || ".nomedia".equalsIgnoreCase(file.getName())) {
       return;
     }
     String path = file.getAbsolutePath();
@@ -585,6 +585,15 @@ public class Media {
         if (path == null || path.length() == 0) {
           Uri mediaUri = isVideo ? MediaStore.Video.Media.getContentUri("external") : MediaStore.Images.Media.getContentUri("external");
           path = ContentUris.withAppendedId(mediaUri, imageId).toString();
+        }
+        // MediaStore can retain zero-byte placeholders after an interrupted
+        // download. Do not expose those rows as selectable media; content://
+        // rows are kept because scoped-storage providers may not expose DATA.
+        if (!path.startsWith("content://")) {
+          File localFile = new File(path);
+          if (!localFile.isFile() || !localFile.canRead() || localFile.length() <= 0) {
+            continue;
+          }
         }
         long dateTaken = U.getLongOrInt(c, dateColumn);
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {

@@ -70,6 +70,8 @@ import me.vkryl.core.collection.IntList;
 import org.thunderdog.challegram.v.RtlGridLayoutManager;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
@@ -137,9 +139,9 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
     } else if (id == R.id.menu_btn_more) {
       // Se está dentro de uma pasta e não é modo single, oferece selecionar todos
       if (currentBucket != null && !inSingleMediaMode()) {
-        IntList ids = new IntList(2);
-        StringList strings = new StringList(2);
-        IntList icons = new IntList(2);
+        IntList ids = new IntList(5);
+        StringList strings = new StringList(5);
+        IntList icons = new IntList(5);
 
         ids.append(R.id.btn_selectAll);
         strings.append(R.string.SelectAll);
@@ -153,12 +155,30 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
         strings.append(R.string.Refresh);
         icons.append(R.drawable.baseline_file_download_24);
 
+        ids.append(R.id.btn_sortByName);
+        strings.append(R.string.SortByName);
+        icons.append(R.drawable.baseline_settings_24);
+
+        ids.append(R.id.btn_toggleHidden);
+        strings.append(showHiddenFiles ? R.string.HideHiddenFiles : R.string.ShowHiddenFiles);
+        icons.append(R.drawable.baseline_visibility_24);
+
         showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
           if (optionId == R.id.btn_selectAll) {
             selectAllInCurrentBucket();
           } else if (optionId == R.id.btn_showInFiles) {
             mediaLayout.openGallery(false);
           } else if (optionId == R.id.btn_refresh) {
+            refreshGallery();
+          } else if (optionId == R.id.btn_sortByName) {
+            showSortOptions();
+          } else if (optionId == R.id.btn_toggleHidden) {
+            showHiddenFiles = !showHiddenFiles;
+            if (showHiddenFiles && !context().permissions().canManageStorage()) {
+              if (context().permissions().requestManageStorage(mediaLayout.getContext())) {
+                return true;
+              }
+            }
             refreshGallery();
           }
           return true;
@@ -170,12 +190,96 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
   }
 
   private void refreshGallery () {
+    Media.instance().invalidateGalleryCache();
     galleryLoaded = false;
     galleryLoading = false;
     galleryShown = false;
     gallery = null;
     currentBucket = null;
     loadGalleryPhotos(null);
+  }
+
+  private static final int SORT_DATE_DESC = 0;
+  private static final int SORT_NAME_ASC = 1;
+  private static final int SORT_NAME_DESC = 2;
+  private static final int SORT_TYPE_ASC = 3;
+  private static final int SORT_TYPE_DESC = 4;
+  private int sortMode = SORT_NAME_ASC;
+  private boolean showHiddenFiles;
+
+  public void onStoragePermissionResult (boolean granted) {
+    if (!granted) {
+      showHiddenFiles = false;
+    }
+    refreshGallery();
+  }
+
+  private void showSortOptions () {
+    int[] ids = new int[] {R.id.btn_sortDateDesc, R.id.btn_sortNameAsc, R.id.btn_sortNameDesc, R.id.btn_sortTypeAsc, R.id.btn_sortTypeDesc};
+    String[] strings = new String[] {
+      Lang.getString(R.string.SortDateDesc),
+      Lang.getString(R.string.SortNameAsc),
+      Lang.getString(R.string.SortNameDesc),
+      Lang.getString(R.string.SortTypeAsc),
+      Lang.getString(R.string.SortTypeDesc)
+    };
+    int[] icons = new int[] {
+      R.drawable.baseline_access_time_24,
+      R.drawable.baseline_settings_24,
+      R.drawable.baseline_settings_24,
+      R.drawable.baseline_settings_24,
+      R.drawable.baseline_settings_24
+    };
+    showOptions(Lang.getString(R.string.SortBy), ids, strings, null, icons, (v, optionId) -> {
+      if (optionId == R.id.btn_sortDateDesc) sortMode = SORT_DATE_DESC;
+      else if (optionId == R.id.btn_sortNameAsc) sortMode = SORT_NAME_ASC;
+      else if (optionId == R.id.btn_sortNameDesc) sortMode = SORT_NAME_DESC;
+      else if (optionId == R.id.btn_sortTypeAsc) sortMode = SORT_TYPE_ASC;
+      else if (optionId == R.id.btn_sortTypeDesc) sortMode = SORT_TYPE_DESC;
+      if (gallery != null) {
+        sortGallery(gallery);
+        showCurrentBucketImages();
+      }
+      return true;
+    });
+  }
+
+  private String getGalleryFileName (ImageFile file) {
+    String path = file != null ? file.getFilePath() : null;
+    if (path == null) return "";
+    int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    return (slash >= 0 ? path.substring(slash + 1) : path).toLowerCase(java.util.Locale.ROOT);
+  }
+
+  private int getGalleryFileType (ImageFile file) {
+    if (!(file instanceof ImageGalleryFile)) return 4;
+    ImageGalleryFile galleryFile = (ImageGalleryFile) file;
+    if (galleryFile.isVideo()) return 1;
+    return getGalleryFileName(file).endsWith(".gif") ? 2 : 0;
+  }
+
+  private int compareGalleryFiles (ImageFile first, ImageFile second) {
+    if (!(first instanceof ImageGalleryFile) || !(second instanceof ImageGalleryFile)) return 0;
+    ImageGalleryFile a = (ImageGalleryFile) first;
+    ImageGalleryFile b = (ImageGalleryFile) second;
+    if (sortMode == SORT_DATE_DESC) return a.compareTo(b);
+    if (sortMode == SORT_TYPE_ASC || sortMode == SORT_TYPE_DESC) {
+      int typeCompare = Integer.compare(getGalleryFileType(a), getGalleryFileType(b));
+      if (sortMode == SORT_TYPE_DESC) typeCompare = -typeCompare;
+      if (typeCompare != 0) return typeCompare;
+    }
+    int nameCompare = getGalleryFileName(a).compareTo(getGalleryFileName(b));
+    if (sortMode == SORT_NAME_DESC) nameCompare = -nameCompare;
+    if (nameCompare != 0) return nameCompare;
+    return Long.compare(b.getGalleryId(), a.getGalleryId());
+  }
+
+  private void sortGallery (Media.Gallery value) {
+    if (value == null) return;
+    Comparator<ImageFile> comparator = this::compareGalleryFiles;
+    for (Media.GalleryBucket bucket : value.getBuckets()) {
+      Collections.sort(bucket.getMedia(), comparator);
+    }
   }
 
   private void selectAllInCurrentBucket () {
@@ -384,7 +488,27 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
     }
     galleryLoading = true;
     onGalleryComplete = onComplete;
-    Media.instance().getGalleryPhotos(0L, this, getArguments() == null || getArguments().allowVideos);
+    requestTime = SystemClock.uptimeMillis();
+    final boolean includeHidden = showHiddenFiles;
+    Media.instance().post(() -> {
+      final Media.Gallery loadedGallery = Media.instance().getGallery(includeHidden);
+      UI.post(() -> {
+        Log.i("Received gallery in %dms", SystemClock.uptimeMillis() - requestTime);
+        if (loadedGallery == null || loadedGallery.isEmpty()) {
+          setError(loadedGallery != null);
+        } else {
+          hasGalleryAccess = true;
+          sortGallery(loadedGallery);
+          setGallery(loadedGallery);
+        }
+        if (onGalleryComplete != null) {
+          onGalleryComplete.run();
+          onGalleryComplete = null;
+        }
+        galleryLoading = false;
+        galleryLoaded = true;
+      });
+    });
   }
 
   private long requestTime;
@@ -429,6 +553,7 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
 
   private void setGallery (Media.Gallery gallery) {
     this.gallery = gallery;
+    sortGallery(gallery);
     this.currentBucket = gallery != null ? gallery.getDefaultBucket() : null;
     showGallery(true);
   }
@@ -892,6 +1017,9 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
   private boolean showingFoundImages;
 
   private void showCurrentBucketImages () {
+    if (gallery != null) {
+      sortGallery(gallery);
+    }
     if (showingFoundImages) {
       mediaLayout.clearCounter();
       showingFoundImages = false;

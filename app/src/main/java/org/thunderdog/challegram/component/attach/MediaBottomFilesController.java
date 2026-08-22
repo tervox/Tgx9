@@ -244,6 +244,38 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     }
   }
 
+  private String getGalleryFileName (ImageFile file) {
+    String path = file != null ? file.getFilePath() : null;
+    if (path == null) return "";
+    int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    return (slash >= 0 ? path.substring(slash + 1) : path).toLowerCase(java.util.Locale.ROOT);
+  }
+
+  private int compareGalleryFiles (ImageFile first, ImageFile second) {
+    if (!(first instanceof ImageGalleryFile) || !(second instanceof ImageGalleryFile)) return 0;
+    ImageGalleryFile a = (ImageGalleryFile) first;
+    ImageGalleryFile b = (ImageGalleryFile) second;
+    if (sortMode == 0) return a.compareTo(b);
+    int typeCompare = 0;
+    if (sortMode == 3 || sortMode == 4) {
+      typeCompare = Integer.compare(getFileGroup(new File(a.getFilePath())), getFileGroup(new File(b.getFilePath())));
+      if (sortMode == 4) typeCompare = -typeCompare;
+    }
+    if (typeCompare != 0) return typeCompare;
+    int nameCompare = getGalleryFileName(a).compareTo(getGalleryFileName(b));
+    if (sortMode == 2) nameCompare = -nameCompare;
+    if (nameCompare != 0) return nameCompare;
+    return Long.compare(b.getGalleryId(), a.getGalleryId());
+  }
+
+  private void sortGallery (Media.Gallery gallery) {
+    if (gallery == null) return;
+    Comparator<ImageFile> comparator = this::compareGalleryFiles;
+    for (Media.GalleryBucket bucket : gallery.getBuckets()) {
+      Collections.sort(bucket.getMedia(), comparator);
+    }
+  }
+
   private void reloadCurrentFolder () {
     ArrayList<ListItem> current = new ArrayList<>(adapter.getItems());
     ArrayList<ListItem> folders = new ArrayList<>();
@@ -574,7 +606,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
               }
             }*/
         
-        return new Result(items, true);
+        // Keep the attachment sheet at its original compact height on the
+        // root screen. Selecting Gallery or a folder may expand it later.
+        return new Result(items, false);
       }
     };
   }
@@ -793,6 +827,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           openAlert(this, R.string.AppName, R.string.NothingFound);
           return null;
         }
+        sortGallery(gallery);
 
         ArrayList<ListItem> items = new ArrayList<>(gallery.getBucketCount() - 1 + gallery.getAllMediaBucket().size());
         InlineResult<?> home = createItem(context, tdlib, KEY_UPPER, R.drawable.baseline_image_24, "..", Lang.getString(R.string.AttachFolderHome));
@@ -860,7 +895,8 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         }
 
         int size = bucket.size();
-        ArrayList<ListItem> items = new ArrayList<>( size + 1);
+        Collections.sort(bucket.getMedia(), MediaBottomFilesController.this::compareGalleryFiles);
+        ArrayList<ListItem> items = new ArrayList<>(size + 1);
         InlineResult<?> home = createItem(context, tdlib, KEY_UPPER, R.drawable.baseline_image_24, "..", Lang.getString(R.string.Gallery));
         items.add(createItem(home, R.id.btn_folder_upper));
 
@@ -914,7 +950,10 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
               long dateAdded = c.getLong(6);
               long dateModified = c.getLong(7);
               if (!StringUtils.isEmpty(data)) {
-                entries.add(new FileEntry(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL, id), id, displayName, size, data, mimeType, dateAdded, dateModified));
+                File localFile = new File(data);
+                if (localFile.isFile() && localFile.canRead() && localFile.length() > 0) {
+                  entries.add(new FileEntry(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL, id), id, displayName, size, data, mimeType, dateAdded, dateModified));
+                }
               }
             }
 
@@ -1084,6 +1123,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
                 continue;
               }
               if (!showHiddenFiles && name.startsWith(".")) {
+                continue;
+              }
+              if (file.isDirectory()) {
+                if (!file.canRead()) {
+                  continue;
+                }
+              } else if (!file.isFile() || !file.canRead() || file.length() <= 0) {
                 continue;
               }
               filesList.add(file);
