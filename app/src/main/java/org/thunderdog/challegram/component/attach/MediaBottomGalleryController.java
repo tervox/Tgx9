@@ -258,6 +258,34 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
     return getGalleryFileName(file).endsWith(".gif") ? 2 : 0;
   }
 
+  private int compareNaturalNames (String a, String b) {
+    int i = 0, j = 0;
+    while (i < a.length() && j < b.length()) {
+      char ca = a.charAt(i), cb = b.charAt(j);
+      if (Character.isDigit(ca) && Character.isDigit(cb)) {
+        int start1 = i, start2 = j;
+        while (i < a.length() && Character.isDigit(a.charAt(i))) i++;
+        while (j < b.length() && Character.isDigit(b.charAt(j))) j++;
+        int significant1 = start1;
+        while (significant1 < i - 1 && a.charAt(significant1) == '0') significant1++;
+        int significant2 = start2;
+        while (significant2 < j - 1 && b.charAt(significant2) == '0') significant2++;
+        int digits1 = i - significant1;
+        int digits2 = j - significant2;
+        if (digits1 != digits2) return Integer.compare(digits1, digits2);
+        int digitsCompare = a.substring(significant1, i).compareTo(b.substring(significant2, j));
+        if (digitsCompare != 0) return digitsCompare;
+        int leadingZeroCompare = Integer.compare(i - start1, j - start2);
+        if (leadingZeroCompare != 0) return leadingZeroCompare;
+      } else {
+        int cmp = Character.toLowerCase(ca) - Character.toLowerCase(cb);
+        if (cmp != 0) return cmp;
+        i++; j++;
+      }
+    }
+    return Integer.compare(a.length(), b.length());
+  }
+
   private int compareGalleryFiles (ImageFile first, ImageFile second) {
     if (!(first instanceof ImageGalleryFile) || !(second instanceof ImageGalleryFile)) return 0;
     ImageGalleryFile a = (ImageGalleryFile) first;
@@ -268,7 +296,7 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
       if (sortMode == SORT_TYPE_DESC) typeCompare = -typeCompare;
       if (typeCompare != 0) return typeCompare;
     }
-    int nameCompare = getGalleryFileName(a).compareTo(getGalleryFileName(b));
+    int nameCompare = compareNaturalNames(getGalleryFileName(a), getGalleryFileName(b));
     if (sortMode == SORT_NAME_DESC) nameCompare = -nameCompare;
     if (nameCompare != 0) return nameCompare;
     return Long.compare(b.getGalleryId(), a.getGalleryId());

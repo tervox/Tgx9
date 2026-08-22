@@ -10113,14 +10113,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
 
     openingMediaLayout = true;
-    mediaLayout.preload(() -> {
-      if (isFocused() && !isDestroyed()) {
-        mediaLayout.show();
-      }
-      openingMediaLayout = false;
-    }, 300l);
-
-    // mediaLayout.show();
+    // Do not wait for MediaStore/.nomedia scanning before showing the
+    // attachment sheet. The selected tab continues loading in Background.
+    mediaLayout.show();
+    openingMediaLayout = false;
+    mediaLayout.preload(() -> { }, 300l);
   }
 
   /*@Override

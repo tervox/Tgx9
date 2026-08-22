@@ -21,6 +21,7 @@ strings = {
     "Refresh": "Atualizar",
     "ShowHiddenFiles": "Mostrar ocultos",
     "HideHiddenFiles": "Ocultar ocultos",
+    "FirebaseErrorResolveDismiss": "Não mostrar este aviso novamente",
     "SortBy": "Ordenar por",
     "SortDateDesc": "Data (mais recente)",
     "SortNameAsc": "Nome (A-Z)",

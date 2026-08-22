@@ -291,12 +291,23 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       }
     }
 
+    java.util.Collections.sort(folders, (a, b) -> {
+      Object da = a.getData();
+      Object db = b.getData();
+      if (da instanceof InlineResultCommon && db instanceof InlineResultCommon) {
+        File fa = new File(normalizePath(((InlineResultCommon) da).getId()));
+        File fb = new File(normalizePath(((InlineResultCommon) db).getId()));
+        return compare(fa, fb);
+      }
+      return 0;
+    });
+
     java.util.Collections.sort(files, (a, b) -> {
       Object da = a.getData();
       Object db = b.getData();
       if (da instanceof InlineResultCommon && db instanceof InlineResultCommon) {
-        String pa = ((InlineResultCommon) da).getId();
-        String pb = ((InlineResultCommon) db).getId();
+        String pa = normalizePath(((InlineResultCommon) da).getId());
+        String pb = normalizePath(((InlineResultCommon) db).getId());
         if (pa != null && pb != null) {
           File fa = new File(pa);
           File fb = new File(pb);
@@ -319,7 +330,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       for (ListItem item : files) {
         Object d = item.getData();
         if (d instanceof InlineResultCommon) {
-          String p = ((InlineResultCommon) d).getId();
+          String p = normalizePath(((InlineResultCommon) d).getId());
           if (p != null) {
             int g = getFileGroup(new File(p));
             groups.get(g).add(item);
@@ -1126,10 +1137,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
                 continue;
               }
               if (file.isDirectory()) {
-                if (!file.canRead()) {
-                  continue;
-                }
-              } else if (!file.isFile() || !file.canRead() || file.length() <= 0) {
+                // Keep real directories in the list; Android may report
+                // canRead() conservatively even when listFiles() works.
+              } else if (!file.isFile()) {
                 continue;
               }
               filesList.add(file);
@@ -1175,6 +1185,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   private static String normalizePath (String path) {
+    if (path == null) return null;
     return path.startsWith(KEY_FOLDER) ? path.substring(KEY_FOLDER.length()) : path.startsWith(KEY_FILE) ? path.substring(KEY_FILE.length()) : path;
   }
 
@@ -1186,16 +1197,25 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         int start1 = i, start2 = j;
         while (i < a.length() && Character.isDigit(a.charAt(i))) i++;
         while (j < b.length() && Character.isDigit(b.charAt(j))) j++;
-        long n1 = Long.parseLong(a.substring(start1, i));
-        long n2 = Long.parseLong(b.substring(start2, j));
-        if (n1 != n2) return Long.compare(n1, n2);
+
+        int significant1 = start1;
+        while (significant1 < i - 1 && a.charAt(significant1) == '0') significant1++;
+        int significant2 = start2;
+        while (significant2 < j - 1 && b.charAt(significant2) == '0') significant2++;
+        int digits1 = i - significant1;
+        int digits2 = j - significant2;
+        if (digits1 != digits2) return Integer.compare(digits1, digits2);
+        int digitsCompare = a.substring(significant1, i).compareTo(b.substring(significant2, j));
+        if (digitsCompare != 0) return digitsCompare;
+        int leadingZeroCompare = Integer.compare(i - start1, j - start2);
+        if (leadingZeroCompare != 0) return leadingZeroCompare;
       } else {
         int cmp = Character.toLowerCase(ca) - Character.toLowerCase(cb);
         if (cmp != 0) return cmp;
         i++; j++;
       }
     }
-    return a.length() - b.length();
+    return Integer.compare(a.length(), b.length());
   }
 
   public int compare (File o1, File o2) {

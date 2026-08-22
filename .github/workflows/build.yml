@@ -41,6 +41,8 @@ jobs:
             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/ui/MessagesController.java \
             tgx/app/src/main/java/org/thunderdog/challegram/ui/
+          cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/ui/SettingsNotificationController.java \
+            tgx/app/src/main/java/org/thunderdog/challegram/ui/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaLayout.java \
             tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
           # Fix tgcalls libs
