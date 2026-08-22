@@ -10315,7 +10315,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
         final boolean showCaptionAboveMedia = false; // FIXME: showCaptionAboveMedia
         TD.FileInfo info = new TD.FileInfo();
         TdApi.InputFile inputFile = TD.createInputFile(path, null, info);
-        TdApi.InputMessageContent inputMessageContent = TD.toInputMessageContent(path, inputFile, info, caption, showCaptionAboveMedia, allowAudio, allowGifs, allowVideos, allowDocs, false);
+        // In a grouped file selection, silent videos must remain videos. Otherwise
+        // TD.toInputMessageContent classifies short, audio-less videos as Animation,
+        // which forces TD.toFunctions to split the album into small messages.
+        boolean allowAnimation = allowGifs && !needGroupMedia;
+        TdApi.InputMessageContent inputMessageContent = TD.toInputMessageContent(path, inputFile, info, caption, showCaptionAboveMedia, allowAudio, allowAnimation, allowVideos, allowDocs, false);
         if (inputMessageContent == null) {
           restrictionFailed = true;
           break;
@@ -10334,7 +10338,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
         content.set(i, tdlib.filegen().createThumbnail(inputMessageContent, isSecretChat));
       }
 
-      List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, content.toArray(new TdApi.InputMessageContent[0]), needGroupMedia);
+      TdApi.InputMessageContent[] contentForFunctions = content.toArray(new TdApi.InputMessageContent[0]);
+      if (needGroupMedia) {
+        contentForFunctions = moveNonMediaAfterMedia(contentForFunctions);
+      }
+      List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, contentForFunctions, needGroupMedia);
       UI.post(() -> onReadyToSend.runWithData(functions));
     });
   }
