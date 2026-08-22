@@ -75,6 +75,15 @@ public class Media {
 
   private MediaThread thread;
 
+  // The attachment picker may request the gallery repeatedly while the user
+  // opens the menu or returns from the storage settings. Reuse the immutable
+  // result briefly, but keep an explicit invalidation for Atualizar.
+  private static final long GALLERY_CACHE_TTL_MS = 4000;
+  private final Object galleryCacheLock = new Object();
+  private Gallery galleryCache;
+  private long galleryCacheUptime;
+  private boolean galleryCacheIncludesNomedia;
+
   private Media () {
     thread = new MediaThread();
   }
@@ -88,7 +97,15 @@ public class Media {
   }
 
   public void clear () {
+    invalidateGalleryCache();
+  }
 
+  public void invalidateGalleryCache () {
+    synchronized (galleryCacheLock) {
+      galleryCache = null;
+      galleryCacheUptime = 0;
+      galleryCacheIncludesNomedia = false;
+    }
   }
 
   // Docs
@@ -346,6 +363,13 @@ public class Media {
    * "show hidden" action in the attachment picker.
    */
   public Gallery getGallery (boolean includeNomediaFolders) {
+    final long now = SystemClock.uptimeMillis();
+    synchronized (galleryCacheLock) {
+      if (galleryCache != null && galleryCacheIncludesNomedia == includeNomediaFolders && now - galleryCacheUptime < GALLERY_CACHE_TTL_MS) {
+        return galleryCache;
+      }
+    }
+
     Cursor cursor = getGalleryCursor(0, true);
     if (cursor == null) {
       return null;
@@ -354,6 +378,11 @@ public class Media {
     closeCursor(cursor);
     if (includeNomediaFolders) {
       gallery = mergeNomediaGallery(gallery);
+    }
+    synchronized (galleryCacheLock) {
+      galleryCache = gallery;
+      galleryCacheUptime = SystemClock.uptimeMillis();
+      galleryCacheIncludesNomedia = includeNomediaFolders;
     }
     return gallery;
   }
@@ -693,9 +722,8 @@ public class Media {
       }
     }
 
-    if (allMedia.isEmpty())
-      return null;
-
+    // Keep an empty Gallery object: when Mostrar ocultos is active, the
+    // subsequent .nomedia scan may populate it even if MediaStore is empty.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       Comparator<ImageFile> comparator = (a, b) -> {
         ImageGalleryFile g1 = (ImageGalleryFile) a;

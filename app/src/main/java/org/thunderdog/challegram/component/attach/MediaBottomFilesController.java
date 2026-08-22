@@ -168,6 +168,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   private void refreshCurrentFolder () {
+    Media.instance().invalidateGalleryCache();
     if (stack.isEmpty()) {
       // Tela raiz — reconstroi a lista de pastas
       buildCells();
@@ -390,7 +391,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private int initialItemsCount;
 
   private void buildCells () {
-    navigateToPath(null, null, null, false, null, null, null);
+    cancelCurrentLoadOperation();
+    LoadOperation operation = buildRoot();
+    operation.setCallbacks(() -> {}, null);
+    this.currentLoadOperation = operation;
+    Background.instance().post(operation);
   }
 
   private void navigateToPath (final View view, final String currentPath, final String parentPath, boolean isUpper, final InlineResultCommon data, Runnable onDone, Runnable onError) {
@@ -444,121 +449,134 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       return;
     }
 
-    try {
-      final File baseExternalDir = Environment.getExternalStorageDirectory();
-      if (baseExternalDir != null) {
-        final String environmentPath = baseExternalDir.getPath();
-        final boolean isRemovable = Environment.isExternalStorageRemovable();
-        StatFs fs = new StatFs(environmentPath);
-        String text = Lang.getString(R.string.FreeXofY, Strings.buildSize(StorageUtils.freeMemorySize(fs)), Strings.buildSize(StorageUtils.totalMemorySize(fs)));
-        InlineResultCommon internalStorage = new InlineResultCommon(context, tdlib, KEY_FOLDER + environmentPath, ColorId.fileAttach, isRemovable ? R.drawable.baseline_sd_storage_24 : R.drawable.baseline_storage_24, Lang.getString(isRemovable ? R.string.SdCard : R.string.InternalStorage), text).setDisableProgressInteract(true);
-        items.add(createItem(internalStorage, R.id.btn_internalStorage));
+    LoadOperation operation = buildRoot();
+    operation.setCallbacks(() -> {}, null);
+    this.currentLoadOperation = operation;
+    Background.instance().post(operation);
+  }
+
+  private LoadOperation buildRoot () {
+    return new LoadOperation(this) {
+      @Override
+      public Result act () {
+        ArrayList<ListItem> items = new ArrayList<>();
+        try {
+              final File baseExternalDir = Environment.getExternalStorageDirectory();
+              if (baseExternalDir != null) {
+                final String environmentPath = baseExternalDir.getPath();
+                final boolean isRemovable = Environment.isExternalStorageRemovable();
+                StatFs fs = new StatFs(environmentPath);
+                String text = Lang.getString(R.string.FreeXofY, Strings.buildSize(StorageUtils.freeMemorySize(fs)), Strings.buildSize(StorageUtils.totalMemorySize(fs)));
+                InlineResultCommon internalStorage = new InlineResultCommon(context, tdlib, KEY_FOLDER + environmentPath, ColorId.fileAttach, isRemovable ? R.drawable.baseline_sd_storage_24 : R.drawable.baseline_storage_24, Lang.getString(isRemovable ? R.string.SdCard : R.string.InternalStorage), text).setDisableProgressInteract(true);
+                items.add(createItem(internalStorage, R.id.btn_internalStorage));
+              }
+        
+              final ArrayList<String> externalStorageFiles = U.getExternalStorageDirectories(baseExternalDir != null ? baseExternalDir.getPath() : null, false);
+              if (externalStorageFiles != null) {
+                for (String dir : externalStorageFiles) {
+                  InlineResultCommon internalStorage = new InlineResultCommon(context, tdlib, KEY_FOLDER + dir, ColorId.fileAttach, R.drawable.baseline_storage_24, Lang.getString(R.string.Storage), dir).setDisableProgressInteract(true);
+                  items.add(createItem(internalStorage, R.id.btn_internalStorage));
+                }
+              }
+        
+            } catch (Throwable t) {
+              Log.e("Cannot add storage directory", t);
+            }
+        
+            InlineResultCommon galleryItem = createItem(context, tdlib, KEY_GALLERY, R.drawable.baseline_image_24, Lang.getString(R.string.Gallery), Lang.getString(R.string.SendMediaHint));
+            items.add(createItem(galleryItem, R.id.btn_galleryFiles));
+        
+            InlineResultCommon musicItem = createItem(context, tdlib, KEY_MUSIC, R.drawable.baseline_music_note_24, Lang.getString(R.string.Music), Lang.getString(R.string.SendMusicHint));
+            items.add(createItem(musicItem, R.id.btn_musicFiles));
+        
+            boolean addedDownloads = false;
+            boolean downloadsEmpty = false;
+            if (context.permissions().canManageStorage()) {
+              try {
+                File file = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (file.exists() && file.isDirectory()) {
+                  File[] files = file.listFiles();
+                  if (files != null && !(downloadsEmpty = files.length == 0)) {
+                    InlineResultCommon common = createItem(context, tdlib, KEY_FOLDER + file.getPath(), R.drawable.baseline_file_download_24, Lang.getString(R.string.Downloads), Lang.plural(R.string.xFiles, files.length));
+                    items.add(createItem(common, file.isDirectory() ? R.id.btn_folder : R.id.btn_file));
+                    addedDownloads = true;
+                  }
+                }
+              } catch (Throwable t) {
+                Log.e("Cannot add Downloads directory", t);
+              }
+            }
+            if (!addedDownloads && !downloadsEmpty && context().permissions().canRequestDownloadsAccess()) {
+              InlineResultCommon downloadsItem = createItem(context, tdlib, KEY_DOWNLOADS, R.drawable.baseline_file_download_24, Lang.getString(R.string.Downloads), Lang.getString(R.string.Files));
+              items.add(createItem(downloadsItem, R.id.btn_downloads));
+            }
+        
+            boolean hasRoot = false;
+            try {
+              final File rootDir = new File("/");
+              File[] files = rootDir.listFiles();
+              if (files != null && files.length > 0) {
+                int filesCount = 0;
+                int foldersCount = 0;
+                for (File file : files) {
+                  if (file.isDirectory())
+                    foldersCount++;
+                  else
+                    filesCount++;
+                }
+                String text;
+                if (filesCount != 0 && foldersCount != 0)
+                  text = Lang.getString(R.string.format_filesAndFolders, Lang.plural(R.string.xFolders, foldersCount), Lang.plural(R.string.xFiles, filesCount));
+                else if (foldersCount != 0)
+                  text = Lang.plural(R.string.xFolders, foldersCount);
+                else
+                  text = Lang.plural(R.string.xFiles, filesCount);
+                InlineResultCommon rootDirectory = new InlineResultCommon(context, tdlib, KEY_FOLDER + rootDir.getPath(), ColorId.fileAttach, R.drawable.baseline_folder_24, Lang.getString(R.string.RootDirectory), text).setDisableProgressInteract(true);
+                items.add(createItem(rootDirectory, R.id.btn_folder));
+                hasRoot = true;
+              }
+            } catch (Throwable t) {
+              Log.i("Cannot add root directory", t);
+            }
+        
+            initialItemsCount = items.size();
+        
+            if (!hasRoot) {
+              addApplicationFolders(items);
+            }
+        
+            /*if (Settings.instance().inDeveloperMode()) {
+              String internalPath = TD.getTGDir(false);
+              String externalPath = TD.getTGDir(true);
+        
+              InlineResultCommon internal = createItem(context, tdlib, KEY_FOLDER + internalPath, R.drawable.baseline_folder_24, "[TDLib] Internal", internalPath);
+              items.add(createItem(internal, R.id.btn_folder));
+        
+              if (!internalPath.equals(externalPath)) {
+                InlineResultCommon external = createItem(context, tdlib, KEY_FOLDER + externalPath, R.drawable.baseline_folder_24, "[TDLib] External", externalPath);
+                items.add(createItem(external, R.id.btn_folder));
+              }
+        
+              File externalFile = UI.getContext().getExternalFilesDir(null);
+              if (externalFile != null && !Strings.compare(externalPath, externalFile.getPath())) {
+                externalPath = externalFile.getPath();
+                InlineResultCommon external = createItem(context, tdlib, KEY_FOLDER + externalPath, R.drawable.baseline_folder_24, "[Challegram] External", externalPath);
+                items.add(createItem(external, R.id.btn_folder));
+              }
+        
+              File internalFile = UI.getContext().getFilesDir();
+              if (internalFile != null) {
+                internalPath = internalFile.getPath();
+                if (!externalPath.equals(internalPath)) {
+                  internal = createItem(context, tdlib, KEY_FOLDER + internalPath, R.drawable.baseline_folder_24, "[Challegram] Internal", internalPath);
+                  items.add(createItem(internal, R.id.btn_folder));
+                }
+              }
+            }*/
+        
+        return new Result(items, true);
       }
-
-      final ArrayList<String> externalStorageFiles = U.getExternalStorageDirectories(baseExternalDir != null ? baseExternalDir.getPath() : null, false);
-      if (externalStorageFiles != null) {
-        for (String dir : externalStorageFiles) {
-          InlineResultCommon internalStorage = new InlineResultCommon(context, tdlib, KEY_FOLDER + dir, ColorId.fileAttach, R.drawable.baseline_storage_24, Lang.getString(R.string.Storage), dir).setDisableProgressInteract(true);
-          items.add(createItem(internalStorage, R.id.btn_internalStorage));
-        }
-      }
-
-    } catch (Throwable t) {
-      Log.e("Cannot add storage directory", t);
-    }
-
-    InlineResultCommon galleryItem = createItem(context, tdlib, KEY_GALLERY, R.drawable.baseline_image_24, Lang.getString(R.string.Gallery), Lang.getString(R.string.SendMediaHint));
-    items.add(createItem(galleryItem, R.id.btn_galleryFiles));
-
-    InlineResultCommon musicItem = createItem(context, tdlib, KEY_MUSIC, R.drawable.baseline_music_note_24, Lang.getString(R.string.Music), Lang.getString(R.string.SendMusicHint));
-    items.add(createItem(musicItem, R.id.btn_musicFiles));
-
-    boolean addedDownloads = false;
-    boolean downloadsEmpty = false;
-    if (context.permissions().canManageStorage()) {
-      try {
-        File file = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        if (file.exists() && file.isDirectory()) {
-          File[] files = file.listFiles();
-          if (files != null && !(downloadsEmpty = files.length == 0)) {
-            InlineResultCommon common = createItem(context, tdlib, KEY_FOLDER + file.getPath(), R.drawable.baseline_file_download_24, Lang.getString(R.string.Downloads), Lang.plural(R.string.xFiles, files.length));
-            items.add(createItem(common, file.isDirectory() ? R.id.btn_folder : R.id.btn_file));
-            addedDownloads = true;
-          }
-        }
-      } catch (Throwable t) {
-        Log.e("Cannot add Downloads directory", t);
-      }
-    }
-    if (!addedDownloads && !downloadsEmpty && context().permissions().canRequestDownloadsAccess()) {
-      InlineResultCommon downloadsItem = createItem(context, tdlib, KEY_DOWNLOADS, R.drawable.baseline_file_download_24, Lang.getString(R.string.Downloads), Lang.getString(R.string.Files));
-      items.add(createItem(downloadsItem, R.id.btn_downloads));
-    }
-
-    boolean hasRoot = false;
-    try {
-      final File rootDir = new File("/");
-      File[] files = rootDir.listFiles();
-      if (files != null && files.length > 0) {
-        int filesCount = 0;
-        int foldersCount = 0;
-        for (File file : files) {
-          if (file.isDirectory())
-            foldersCount++;
-          else
-            filesCount++;
-        }
-        String text;
-        if (filesCount != 0 && foldersCount != 0)
-          text = Lang.getString(R.string.format_filesAndFolders, Lang.plural(R.string.xFolders, foldersCount), Lang.plural(R.string.xFiles, filesCount));
-        else if (foldersCount != 0)
-          text = Lang.plural(R.string.xFolders, foldersCount);
-        else
-          text = Lang.plural(R.string.xFiles, filesCount);
-        InlineResultCommon rootDirectory = new InlineResultCommon(context, tdlib, KEY_FOLDER + rootDir.getPath(), ColorId.fileAttach, R.drawable.baseline_folder_24, Lang.getString(R.string.RootDirectory), text).setDisableProgressInteract(true);
-        items.add(createItem(rootDirectory, R.id.btn_folder));
-        hasRoot = true;
-      }
-    } catch (Throwable t) {
-      Log.i("Cannot add root directory", t);
-    }
-
-    initialItemsCount = items.size();
-
-    if (!hasRoot) {
-      addApplicationFolders(items);
-    }
-
-    /*if (Settings.instance().inDeveloperMode()) {
-      String internalPath = TD.getTGDir(false);
-      String externalPath = TD.getTGDir(true);
-
-      InlineResultCommon internal = createItem(context, tdlib, KEY_FOLDER + internalPath, R.drawable.baseline_folder_24, "[TDLib] Internal", internalPath);
-      items.add(createItem(internal, R.id.btn_folder));
-
-      if (!internalPath.equals(externalPath)) {
-        InlineResultCommon external = createItem(context, tdlib, KEY_FOLDER + externalPath, R.drawable.baseline_folder_24, "[TDLib] External", externalPath);
-        items.add(createItem(external, R.id.btn_folder));
-      }
-
-      File externalFile = UI.getContext().getExternalFilesDir(null);
-      if (externalFile != null && !Strings.compare(externalPath, externalFile.getPath())) {
-        externalPath = externalFile.getPath();
-        InlineResultCommon external = createItem(context, tdlib, KEY_FOLDER + externalPath, R.drawable.baseline_folder_24, "[Challegram] External", externalPath);
-        items.add(createItem(external, R.id.btn_folder));
-      }
-
-      File internalFile = UI.getContext().getFilesDir();
-      if (internalFile != null) {
-        internalPath = internalFile.getPath();
-        if (!externalPath.equals(internalPath)) {
-          internal = createItem(context, tdlib, KEY_FOLDER + internalPath, R.drawable.baseline_folder_24, "[Challegram] Internal", internalPath);
-          items.add(createItem(internal, R.id.btn_folder));
-        }
-      }
-    }*/
-
-    setFilesItems(null, items, false);
+    };
   }
 
   @Override
@@ -737,20 +755,25 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     @Override
     public void run () {
       synchronized (this) {
-        if (!isCancelled) {
-          final Result result = act();
-          final Runnable callback = result != null && !result.isEmpty() ? onDone : onError;
-          if (callback != null) {
-            UI.post(() -> {
-              if (!context.isDestroyed() && context.currentLoadOperation == LoadOperation.this && !isCancelled()) {
-                if (result != null && !result.isEmpty()) {
-                  context.setFilesItems(LoadOperation.this, result.items, result.needExpand);
-                }
-                callback.run();
-              }
-            });
-          }
+        if (isCancelled) {
+          return;
         }
+      }
+
+      final Result result = act();
+      if (isCancelled()) {
+        return;
+      }
+      final Runnable callback = result != null && !result.isEmpty() ? onDone : onError;
+      if (callback != null) {
+        UI.post(() -> {
+          if (!context.isDestroyed() && context.currentLoadOperation == LoadOperation.this && !isCancelled()) {
+            if (result != null && !result.isEmpty()) {
+              context.setFilesItems(LoadOperation.this, result.items, result.needExpand);
+            }
+            callback.run();
+          }
+        });
       }
     }
   }
@@ -1381,59 +1404,6 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private void navigateTo (View view, InlineResultCommon result) {
     String path = result.getId();
-            if (path != null && path.toLowerCase().endsWith(".m4v")) {
-                try {
-                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
-                    // Tenta copiar streams sem reencode (melhor qualidade)
-                    String[] cmd = {
-                        "ffmpeg", "-i", path,
-                        "-c:v", "copy", "-c:a", "copy",           // tenta copiar sem reencode
-                        "-movflags", "+faststart", "-y", outPath
-                    };
-                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
-                    int exitCode = p.waitFor();
-
-                    if (exitCode != 0 || !new java.io.File(outPath).exists()) {
-                        // Se copy falhar (codec incompatível), faz reencode leve
-                        String[] cmd2 = {
-                            "ffmpeg", "-i", path,
-                            "-c:v", "libx264", "-crf", "17", "-preset", "slow",
-                            "-c:a", "aac", "-b:a", "192k",
-                            "-movflags", "+faststart",
-                            "-vf", "scale=iw:ih", "-y", outPath
-                        };
-                        p = Runtime.getRuntime().exec(cmd2);
-                        p.waitFor();
-                    }
-                    if (new java.io.File(outPath).exists()) {
-                        path = outPath;
-                    }
-                } catch (Throwable ignored) {
-                    // fallback simples
-                    if (path.toLowerCase().endsWith(".m4v")) {
-                        path = path.substring(0, path.length() - 4) + ".mp4";
-                    }
-                }
-            }
-
-            // Conversão automática .m4v → MP4 compatível com Telegram (melhor para lotes)
-            if (path != null && path.toLowerCase().endsWith(".m4v")) {
-                try {
-                    String outPath = path.substring(0, path.length() - 4) + ".mp4";
-                    String[] cmd = {"ffmpeg", "-i", path, "-c:v", "libx264", "-crf", "23", "-preset", "medium",
-                                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-                                    "-vf", "scale='min(1280,iw)':-2", "-y", outPath};
-                    java.lang.Process p = Runtime.getRuntime().exec(cmd);
-                    p.waitFor();
-                    if (new java.io.File(outPath).exists()) {
-                        path = outPath;
-                    }
-                } catch (Throwable ignored) {
-                    // fallback: só renomeia
-                    path = path.substring(0, path.length() - 4) + ".mp4";
-                }
-            }
-
     if (path != null) {
       if (KEY_GALLERY.equals(path) || KEY_MUSIC.equals(path) || KEY_DOWNLOADS.equals(path) || KEY_BUCKET.equals(path) || path.startsWith(KEY_FOLDER)) {
         navigateInside(view, path, result);

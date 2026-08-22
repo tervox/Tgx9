@@ -82,13 +82,23 @@ jobs:
 
       - name: Create local.properties
         run: |
+          # Configure the same keystore used by the final apksigner step.
+          # With signing enabled, the app is no longer marked experimental and
+          # the normal Firebase token path is allowed to run.
+          cat > tgx/tgx-keystore.properties <<EOF
+          keystore.file=$GITHUB_WORKSPACE/tgx9-mods/minha-chave.jks
+          keystore.password=senha123
+          key.alias=tgx
+          key.password=senha123
+          EOF
           printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > tgx/local.properties
           printf 'telegram.api_id=39028426\n' >> tgx/local.properties
           printf 'telegram.api_hash=e815e4f8345295f5d21b4612b17af3b4\n' >> tgx/local.properties
           printf 'app.id=org.thunderdog.challegram\n' >> tgx/local.properties
           printf 'app.name=TelegramX Mod\n' >> tgx/local.properties
           printf 'app.download_url=https://t.me/tgx_android\n' >> tgx/local.properties
-          printf 'app.disable_signing=true\n' >> tgx/local.properties
+          printf 'keystore.file=%s\n' "$GITHUB_WORKSPACE/tgx/tgx-keystore.properties" >> tgx/local.properties
+          printf 'app.disable_signing=false\n' >> tgx/local.properties
           printf 'tgx.extension=none\n' >> tgx/local.properties
 
       - name: Install build dependencies
