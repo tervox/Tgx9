@@ -534,11 +534,19 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
         loadFailed = true;
         Log.e("Cannot load gallery", t);
       }
+      if (!loadFailed && loadedGallery != null && !loadedGallery.isEmpty()) {
+        try {
+          sortGallery(loadedGallery);
+        } catch (Throwable t) {
+          Log.e("Cannot sort gallery", t);
+        }
+      }
       final Media.Gallery resultGallery = loadedGallery;
       final boolean failed = loadFailed;
       UI.post(() -> {
         if (generation != galleryLoadGeneration) {
-          galleryLoading = false;
+          // This result belongs to a refresh that was superseded. It must not
+          // change the state of the newer load.
           return;
         }
         Log.i("Received gallery in %dms", SystemClock.uptimeMillis() - requestTime);
@@ -546,7 +554,6 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
           setError(!failed && resultGallery != null);
         } else {
           hasGalleryAccess = true;
-          sortGallery(resultGallery);
           setGallery(resultGallery);
         }
         if (onGalleryComplete != null) {
@@ -591,7 +598,6 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
 
   private void setGallery (Media.Gallery gallery) {
     this.gallery = gallery;
-    sortGallery(gallery);
     this.currentBucket = gallery != null ? gallery.getDefaultBucket() : null;
     showGallery(true);
   }

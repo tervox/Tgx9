@@ -240,7 +240,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       return;
     }
     StackItem item = stack.get(stack.size() - 1);
-    navigateToPath(null, item.path, getLastPath(2), true, null, null, null);
+    navigateToPath(null, item.path, getLastPath(2), true, item.data, null, null);
   }
 
   private void showSortOptions () {
@@ -345,13 +345,12 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     if (context.permissions().canManageStorage()) {
       try {
         File file = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        // Do not enumerate the entire Downloads directory while opening the
+        // attachment sheet. The exact contents are loaded after entering it.
         if (file.exists() && file.isDirectory()) {
-          File[] files = file.listFiles();
-          if (files != null && !(downloadsEmpty = files.length == 0)) {
-            InlineResultCommon common = createItem(context, tdlib, KEY_FOLDER + file.getPath(), R.drawable.baseline_file_download_24, Lang.getString(R.string.Downloads), Lang.plural(R.string.xFiles, files.length));
-            items.add(createItem(common, file.isDirectory() ? R.id.btn_folder : R.id.btn_file));
-            addedDownloads = true;
-          }
+          InlineResultCommon common = createItem(context, tdlib, KEY_FOLDER + file.getPath(), R.drawable.baseline_file_download_24, Lang.getString(R.string.Downloads), Lang.getString(R.string.Files));
+          items.add(createItem(common, R.id.btn_folder));
+          addedDownloads = true;
         }
       } catch (Throwable t) {
         Log.e("Cannot add Downloads directory", t);
@@ -365,24 +364,10 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     boolean hasRoot = false;
     try {
       final File rootDir = new File("/");
-      File[] files = rootDir.listFiles();
-      if (files != null && files.length > 0) {
-        int filesCount = 0;
-        int foldersCount = 0;
-        for (File file : files) {
-          if (file.isDirectory())
-            foldersCount++;
-          else
-            filesCount++;
-        }
-        String text;
-        if (filesCount != 0 && foldersCount != 0)
-          text = Lang.getString(R.string.format_filesAndFolders, Lang.plural(R.string.xFolders, foldersCount), Lang.plural(R.string.xFiles, filesCount));
-        else if (foldersCount != 0)
-          text = Lang.plural(R.string.xFolders, foldersCount);
-        else
-          text = Lang.plural(R.string.xFiles, filesCount);
-        InlineResultCommon rootDirectory = new InlineResultCommon(context, tdlib, KEY_FOLDER + rootDir.getPath(), ColorId.fileAttach, R.drawable.baseline_folder_24, Lang.getString(R.string.RootDirectory), text).setDisableProgressInteract(true);
+      // Checking the root itself is cheap; listing `/` here is not needed and
+      // can block on OEM storage providers while the attachment sheet opens.
+      if (rootDir.isDirectory()) {
+        InlineResultCommon rootDirectory = new InlineResultCommon(context, tdlib, KEY_FOLDER + rootDir.getPath(), ColorId.fileAttach, R.drawable.baseline_folder_24, Lang.getString(R.string.RootDirectory), Lang.getString(R.string.Files)).setDisableProgressInteract(true);
         items.add(createItem(rootDirectory, R.id.btn_folder));
         hasRoot = true;
       }
@@ -603,22 +588,40 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
     @Override
     public void run () {
-      synchronized (this) {
-        if (!isCancelled) {
-          final Result result = act();
-          final Runnable callback = result != null && !result.isEmpty() ? onDone : onError;
-          if (callback != null) {
-            UI.post(() -> {
-              if (!context.isDestroyed() && context.currentLoadOperation == LoadOperation.this && !isCancelled()) {
-                if (result != null && !result.isEmpty()) {
-                  context.setFilesItems(LoadOperation.this, result.items, result.needExpand);
-                }
-                callback.run();
-              }
-            });
-          }
-        }
+      if (isCancelled()) {
+        return;
       }
+
+      Result result = null;
+      Throwable failure = null;
+      try {
+        // Do not hold this monitor while reading MediaStore or the filesystem.
+        // The UI thread must be able to cancel a slow operation immediately.
+        result = act();
+      } catch (Throwable t) {
+        failure = t;
+        Log.e("Cannot load attachment folder", t);
+      }
+
+      final Result loadedResult = result;
+      final Throwable loadFailure = failure;
+      final Runnable callback = loadedResult != null && !loadedResult.isEmpty() ? onDone : onError;
+      UI.post(() -> {
+        if (context.isDestroyed() || context.currentLoadOperation != LoadOperation.this || isCancelled()) {
+          return;
+        }
+        if (loadedResult != null && !loadedResult.isEmpty()) {
+          context.setFilesItems(LoadOperation.this, loadedResult.items, loadedResult.needExpand);
+        } else if (callback == null) {
+          // Refresh/Mostrar ocultos have no navigation callback. Always
+          // publish an empty result on failure or an empty folder so stale
+          // items are not left on screen.
+          context.setFilesItems(LoadOperation.this, new ArrayList<>(), false);
+        }
+        if (callback != null) {
+          callback.run();
+        }
+      });
     }
   }
 
@@ -725,7 +728,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     return new LoadOperation(this) {
       @Override
       public Result act () {
-        Media.GalleryBucket bucket = (Media.GalleryBucket) data.getTag();
+        Media.GalleryBucket bucket = data != null ? (Media.GalleryBucket) data.getTag() : null;
         if (bucket == null || bucket.size() == 0) {
           return null;
         }
@@ -1235,7 +1238,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             return;
           }
           if (context.permissions().requestReadExternalStorage(Permissions.ReadType.ALL, grantType -> {
-            if (grantType != Permissions.GrantResult.ALL || !context.permissions().canManageStorage()) {
+            if (grantType == Permissions.GrantResult.NONE || !context.permissions().canManageStorage()) {
               showSystemPicker(isDownloads);
             } else {
               navigateTo(v, result);
@@ -1249,7 +1252,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           switch (path) {
             case KEY_GALLERY: {
               if (context.permissions().requestReadExternalStorage(Permissions.ReadType.IMAGES_AND_VIDEOS, grantType -> {
-                if (grantType == Permissions.GrantResult.ALL) {
+                if (grantType != Permissions.GrantResult.NONE) {
                   navigateTo(v, result);
                 } else {
                   // TODO 1-tap access to privacy settings?
@@ -1262,7 +1265,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             }
             case KEY_MUSIC: {
               if (context.permissions().requestReadExternalStorage(Permissions.ReadType.AUDIO, grantType -> {
-                if (grantType == Permissions.GrantResult.ALL) {
+                if (grantType != Permissions.GrantResult.NONE) {
                   navigateTo(v, result);
                 } else {
                   // TODO 1-tap access to privacy settings?
@@ -1420,10 +1423,12 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private static class StackItem {
     private final String path;
+    private final InlineResultCommon data;
     private final int position, positionOffset;
 
-    public StackItem (String path, int position, int positionOffset) {
+    public StackItem (String path, InlineResultCommon data, int position, int positionOffset) {
       this.path = path;
+      this.data = data;
       this.position = position;
       this.positionOffset = positionOffset;
     }
@@ -1440,10 +1445,10 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         collapseToStart();
       } else {
         StackItem item = stack.get(stack.size() - 1);
-        navigateToPath(null, item.path, getLastPath(2), true, null, () -> {
+        navigateToPath(null, item.path, getLastPath(2), true, item.data, () -> {
           LinearLayoutManager manager = (LinearLayoutManager) recyclerView.getLayoutManager();
           manager.scrollToPositionWithOffset(removedItem.position, removedItem.positionOffset);
-        }, this::navigateUpper);
+        }, null);
       }
     }
   }
@@ -1463,7 +1468,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     final int firstPositionOffset = firstView != null ? firstView.getTop() : 0;
 
     navigateToPath(view, path, getLastPath(1), false, data, () -> {
-      stack.add(new StackItem(path, firstPosition != RecyclerView.NO_POSITION ? firstPosition : 0, firstPositionOffset));
+      stack.add(new StackItem(path, data, firstPosition != RecyclerView.NO_POSITION ? firstPosition : 0, firstPositionOffset));
       manager.scrollToPositionWithOffset(0, 0);
     }, null);
   }
