@@ -132,13 +132,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         } else if (optionId == R.id.btn_sortByName) {
           showSortOptions();
         } else if (optionId == R.id.btn_refresh) {
-          refreshCurrentFolder();
+          refreshCurrentFolder(true);
         } else if (optionId == R.id.btn_toggleHidden) {
           showHiddenFiles = !showHiddenFiles;
           if (showHiddenFiles && !context().permissions().canManageStorage() && context().permissions().requestManageStorage(mediaLayout.getContext())) {
             return true;
           }
-          refreshCurrentFolder();
+          refreshCurrentFolder(true);
         }
         return true;
       });
@@ -231,10 +231,17 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     if (!granted) {
       showHiddenFiles = false;
     }
-    refreshCurrentFolder();
+    refreshCurrentFolder(true);
   }
 
   private void refreshCurrentFolder () {
+    refreshCurrentFolder(false);
+  }
+
+  private void refreshCurrentFolder (boolean forceReload) {
+    if (forceReload) {
+      Media.instance().invalidateGalleryCache();
+    }
     if (stack.isEmpty()) {
       buildCells();
       return;

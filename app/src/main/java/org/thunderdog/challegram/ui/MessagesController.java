@@ -10399,6 +10399,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     final boolean isSecretChat = isSecretChat();
 
     Media.instance().post(() -> {
+      final long preparationStartedAt = SystemClock.uptimeMillis();
       final TdApi.InputMessageContent[] inputContent = new TdApi.InputMessageContent[files.length];
       int i = 0;
       for (ImageGalleryFile file : files) {
@@ -10438,7 +10439,23 @@ public class MessagesController extends ViewController<MessagesController.Argume
           final TdApi.InputFile inputVideo = forceVideo ? VideoGenerationInfo.newFile(file.getFilePath(), file, asFiles) : TD.createInputFile(file.getFilePath(), null, fileInfo);
           TdApi.FormattedText caption = file.getCaption(true, !disableMarkdown);
           if (asFiles && !forceVideo) {
-            content = tdlib.filegen().createThumbnail(TD.toInputMessageContent(file.getFilePath(), inputVideo, fileInfo, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
+            long knownSize = fileInfo.knownSize;
+            if (knownSize <= 0 && file.getFilePath() != null && !file.getFilePath().startsWith("content://")) {
+              try {
+                knownSize = new File(file.getFilePath()).length();
+              } catch (Throwable ignored) { }
+            }
+            long duration = file.getVideoDuration(true);
+            if (duration > 0 && width > 0 && height > 0 && knownSize > 0) {
+              if (sendAsAnimation && duration < 30000L && knownSize < 10L * 1024L * 1024L) {
+                content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, (int) (duration / 1000L), width, height, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
+              } else {
+                content = tdlib.filegen().createThumbnail(new TdApi.InputMessageVideo(inputVideo, null, null, 0, null, (int) (duration / 1000L), width, height, U.canStreamVideo(inputVideo), caption, showCaptionAboveMedia, null, hasSpoiler), isSecretChat);
+              }
+            } else {
+              // Preserve the original metadata fallback for provider URIs or incomplete MediaStore rows.
+              content = tdlib.filegen().createThumbnail(TD.toInputMessageContent(file.getFilePath(), inputVideo, fileInfo, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
+            }
           } else if (sendAsAnimation && file.getSelfDestructType() == null && (files.length == 1 || !needGroupMedia)) {
             content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, file.getVideoDuration(true), width, height, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
           } else {
@@ -10470,13 +10487,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
         i++;
       }
       List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, inputContent, needGroupMedia);
+      Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b prepMs=%d functions=%d", files.length, asFiles, needGroupMedia, SystemClock.uptimeMillis() - preparationStartedAt, functions.size());
       int uploadCount = UploadNotificationManager.countUploadItems(functions);
       if (uploadCount > 0) {
         UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
       }
+      long dispatchStartedAt = SystemClock.uptimeMillis();
       for (TdApi.Function<?> function : functions) {
         tdlib.client().send(function, tdlib.messageHandler());
       }
+      Log.i("TGX9_SEND_MEDIA_DISPATCH: count=%d asFiles=%b functions=%d dispatchMs=%d", files.length, asFiles, functions.size(), SystemClock.uptimeMillis() - dispatchStartedAt);
     });
 
     return true;

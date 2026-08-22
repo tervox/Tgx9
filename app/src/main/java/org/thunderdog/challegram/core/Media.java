@@ -78,7 +78,7 @@ public class Media {
   // The attachment picker may request the gallery repeatedly while the user
   // opens the menu or returns from the storage settings. Reuse the immutable
   // result briefly, but keep an explicit invalidation for Atualizar.
-  private static final long GALLERY_CACHE_TTL_MS = 4000;
+  private static final long GALLERY_CACHE_TTL_MS = 300000;
   private final Object galleryCacheLock = new Object();
   private Gallery galleryCache;
   private long galleryCacheUptime;
@@ -387,15 +387,18 @@ public class Media {
    * "show hidden" action in the attachment picker.
    */
   public Gallery getGallery (boolean includeNomediaFolders) {
-    final long now = SystemClock.uptimeMillis();
+    final long startedAt = SystemClock.uptimeMillis();
+    final long now = startedAt;
     synchronized (galleryCacheLock) {
       if (galleryCache != null && galleryCacheIncludesNomedia == includeNomediaFolders && now - galleryCacheUptime < GALLERY_CACHE_TTL_MS) {
+        Log.i("TGX9_GALLERY_CACHE: hit hidden=%b ageMs=%d media=%d buckets=%d", includeNomediaFolders, now - galleryCacheUptime, galleryCache.getAllImages().size(), galleryCache.getBucketCount());
         return galleryCache;
       }
     }
 
     Cursor cursor = getGalleryCursor(0, true);
     if (cursor == null) {
+      Log.i("TGX9_GALLERY_CACHE: query failed hidden=%b elapsedMs=%d", includeNomediaFolders, SystemClock.uptimeMillis() - startedAt);
       return null;
     }
     Gallery gallery = parseGallery(cursor, true, ImageFile.CENTER_CROP);
@@ -408,6 +411,7 @@ public class Media {
       galleryCacheUptime = SystemClock.uptimeMillis();
       galleryCacheIncludesNomedia = includeNomediaFolders;
     }
+    Log.i("TGX9_GALLERY_CACHE: miss hidden=%b elapsedMs=%d media=%d buckets=%d", includeNomediaFolders, SystemClock.uptimeMillis() - startedAt, gallery != null ? gallery.getAllImages().size() : 0, gallery != null ? gallery.getBucketCount() : 0);
     return gallery;
   }
 

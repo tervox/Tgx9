@@ -57,6 +57,7 @@ public final class UploadNotificationManager {
   private final Object lock = new Object();
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final HashMap<Integer, TdApi.File> activeFiles = new HashMap<>();
+  private final HashMap<Integer, Long> uploadedBytesByFile = new HashMap<>();
   private final HashSet<Integer> startedFileIds = new HashSet<>();
   private final HashSet<Integer> completedFileIds = new HashSet<>();
   private final HashSet<String> completedMessageKeys = new HashSet<>();
@@ -68,6 +69,8 @@ public final class UploadNotificationManager {
   private int expectedCount;
   private int completedCount;
   private long batchStartUptime;
+  private long firstUploadUptime;
+  private long batchUploadedBytes;
   private long lastEventUptime;
   private long lastRefreshUptime;
   private boolean refreshPosted;
@@ -158,6 +161,7 @@ public final class UploadNotificationManager {
       }
       if (!sessionActive) {
         activeFiles.clear();
+        uploadedBytesByFile.clear();
         startedFileIds.clear();
         completedFileIds.clear();
         completedMessageKeys.clear();
@@ -165,6 +169,8 @@ public final class UploadNotificationManager {
         completedCount = 0;
         messageCompletionMode = true;
         batchStartUptime = now;
+        firstUploadUptime = 0;
+        batchUploadedBytes = 0;
         sessionActive = true;
       } else if (expectedCount == total && completedCount == 0 && activeFiles.isEmpty() && now - batchStartUptime < 2000) {
         // The same send pipeline can reach this method twice before TDLib
@@ -207,13 +213,26 @@ public final class UploadNotificationManager {
         sessionActive = true;
         expectedCount = 1;
         completedCount = 0;
+        uploadedBytesByFile.clear();
         startedFileIds.clear();
         completedFileIds.clear();
+        firstUploadUptime = 0;
+        batchUploadedBytes = 0;
+        batchStartUptime = SystemClock.uptimeMillis();
       }
       if (tdlib != null) {
         activeTdlib = tdlib;
       }
+      long uploadedSize = file.remote != null ? Math.max(0L, file.remote.uploadedSize) : 0L;
+      Long previousUploadedSize = uploadedBytesByFile.get(file.id);
+      if (previousUploadedSize == null || uploadedSize > previousUploadedSize) {
+        batchUploadedBytes += previousUploadedSize == null ? uploadedSize : uploadedSize - previousUploadedSize;
+        uploadedBytesByFile.put(file.id, uploadedSize);
+      }
       if (uploading) {
+        if (firstUploadUptime == 0) {
+          firstUploadUptime = SystemClock.uptimeMillis();
+        }
         if (startedFileIds.add(file.id) && !messageCompletionMode && expectedCount < startedFileIds.size()) {
           expectedCount = startedFileIds.size();
         }
@@ -296,6 +315,7 @@ public final class UploadNotificationManager {
     synchronized (lock) {
       sessionActive = false;
       activeFiles.clear();
+      uploadedBytesByFile.clear();
       startedFileIds.clear();
       completedFileIds.clear();
       completedMessageKeys.clear();
@@ -303,6 +323,8 @@ public final class UploadNotificationManager {
       completedCount = 0;
       messageCompletionMode = false;
       batchStartUptime = 0;
+      firstUploadUptime = 0;
+      batchUploadedBytes = 0;
       activeTdlib = null;
       cancelFinishLocked();
       cancelIdleLocked();
@@ -402,15 +424,24 @@ public final class UploadNotificationManager {
 
   private void finishIfComplete (Context context) {
     int completed;
+    int total;
+    long uploadedBytes;
+    long startedAt;
+    long transferStartedAt;
     Tdlib tdlib;
     synchronized (lock) {
       if (!sessionActive || completedCount < expectedCount || (!messageCompletionMode && !activeFiles.isEmpty())) {
         return;
       }
       completed = completedCount;
+      total = expectedCount;
+      uploadedBytes = batchUploadedBytes;
+      startedAt = batchStartUptime;
+      transferStartedAt = firstUploadUptime;
       tdlib = activeTdlib;
       sessionActive = false;
       activeFiles.clear();
+      uploadedBytesByFile.clear();
       startedFileIds.clear();
       completedFileIds.clear();
       completedMessageKeys.clear();
@@ -418,11 +449,18 @@ public final class UploadNotificationManager {
       completedCount = 0;
       messageCompletionMode = false;
       batchStartUptime = 0;
+      firstUploadUptime = 0;
+      batchUploadedBytes = 0;
       activeTdlib = null;
       finishRunnable = null;
       cancelIdleLocked();
       cancelRecoveryLocked();
     }
+    long now = SystemClock.uptimeMillis();
+    long totalElapsed = startedAt > 0 ? Math.max(1L, now - startedAt) : 0L;
+    long transferElapsed = transferStartedAt > 0 ? Math.max(1L, now - transferStartedAt) : totalElapsed;
+    long averageBytesPerSecond = transferElapsed > 0 ? (uploadedBytes * 1000L) / transferElapsed : 0L;
+    Log.i("TGX9_UPLOAD_METRICS: files=%d completed=%d bytes=%d totalMs=%d transferMs=%d avgBytesPerSec=%d", total, completed, uploadedBytes, totalElapsed, transferElapsed, averageBytesPerSecond);
     stopUploadService(context, true);
     showDoneNotification(context, completed);
     if (tdlib != null) {
