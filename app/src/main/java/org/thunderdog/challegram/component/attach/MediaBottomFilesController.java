@@ -834,18 +834,40 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         }
       }
 
-      final Result result = act();
+      final Result result;
+      try {
+        result = act();
+      } catch (Throwable t) {
+        Log.e("Attachment load operation failed", t);
+        if (isCancelled()) {
+          return;
+        }
+        UI.post(() -> {
+          if (!context.isDestroyed() && context.currentLoadOperation == LoadOperation.this && !isCancelled()) {
+            context.setFilesItems(LoadOperation.this, new ArrayList<>(), false);
+          }
+        });
+        return;
+      }
       if (isCancelled()) {
         return;
       }
-      final Runnable callback = result != null && !result.isEmpty() ? onDone : onError;
-      if (callback != null) {
+      final boolean hasResult = result != null && !result.isEmpty();
+      final Runnable callback = hasResult ? onDone : onError;
+      // A refresh can intentionally provide no callback. The result must still
+      // reach the adapter; otherwise navigateInside leaves TYPE_PROGRESS forever.
+      if (hasResult || callback != null || result == null) {
         UI.post(() -> {
           if (!context.isDestroyed() && context.currentLoadOperation == LoadOperation.this && !isCancelled()) {
-            if (result != null && !result.isEmpty()) {
+            if (hasResult) {
               context.setFilesItems(LoadOperation.this, result.items, result.needExpand);
+            } else if (callback == null) {
+              // Never leave the progress row forever after a guarded I/O error.
+              context.setFilesItems(LoadOperation.this, new ArrayList<>(), false);
             }
-            callback.run();
+            if (callback != null) {
+              callback.run();
+            }
           }
         });
       }

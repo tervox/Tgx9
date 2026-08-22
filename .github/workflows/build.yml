@@ -36,7 +36,10 @@ jobs:
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/telegram/UploadNotificationManager.java \
             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/core/Media.java \
-            tgx/app/src/main/java/org/thunderdog/challegram/core/
+             tgx/app/src/main/java/org/thunderdog/challegram/core/
+          cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/U.java \
+             tgx/app/src/main/java/org/thunderdog/challegram/
+
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/telegram/Tdlib.java \
             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/ui/MessagesController.java \
