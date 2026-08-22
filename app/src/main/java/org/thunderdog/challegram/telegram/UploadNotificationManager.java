@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.MainActivity;
+import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.tool.UI;
 
@@ -180,11 +181,7 @@ public final class UploadNotificationManager {
       scheduleIdleCheckLocked(context);
       scheduleRecoveryLocked();
     }
-    handler.post(() -> {
-      startUploadService(context);
-      acquireWakeLock(context);
-      showProgressNotification(context);
-    });
+    postNotificationUpdate(context, true);
   }
 
   public void onFileUpdate (TdApi.UpdateFile update, Tdlib tdlib) {
@@ -240,11 +237,7 @@ public final class UploadNotificationManager {
       }
     }
 
-    handler.post(() -> {
-      startUploadService(context);
-      acquireWakeLock(context);
-      postProgressNotification(context);
-    });
+    postNotificationUpdate(context, false);
   }
 
   private void onMessageTerminal (TdApi.Message message, long oldMessageId, Tdlib tdlib) {
@@ -277,11 +270,7 @@ public final class UploadNotificationManager {
         scheduleFinishLocked(context);
       }
     }
-    handler.post(() -> {
-      startUploadService(context);
-      acquireWakeLock(context);
-      postProgressNotification(context);
-    });
+    postNotificationUpdate(context, false);
   }
 
   public void onMessageSendSucceeded (TdApi.UpdateMessageSendSucceeded update, Tdlib tdlib) {
@@ -324,6 +313,22 @@ public final class UploadNotificationManager {
     }
   }
 
+  private void postNotificationUpdate (final Context context, final boolean immediate) {
+    handler.post(() -> {
+      try {
+        startUploadService(context);
+        acquireWakeLock(context);
+        if (immediate) {
+          showProgressNotification(context);
+        } else {
+          postProgressNotification(context);
+        }
+      } catch (Throwable t) {
+        Log.e("Upload notification update failed", t);
+      }
+    });
+  }
+
   private void postProgressNotification (Context context) {
     synchronized (lock) {
       if (!sessionActive || refreshPosted) {
@@ -337,7 +342,11 @@ public final class UploadNotificationManager {
           refreshPosted = false;
           lastRefreshUptime = SystemClock.uptimeMillis();
         }
-        showProgressNotification(context);
+        try {
+          showProgressNotification(context);
+        } catch (Throwable t) {
+          Log.e("Upload progress notification failed", t);
+        }
       }, delay);
     }
   }
@@ -462,7 +471,11 @@ public final class UploadNotificationManager {
         tdlib = activeTdlib;
       }
       if (tdlib != null) {
-        tdlib.ensureNetworkActiveForUpload();
+        try {
+          tdlib.ensureNetworkActiveForUpload();
+        } catch (Throwable t) {
+          Log.e("Upload network recovery failed", t);
+        }
       }
       synchronized (lock) {
         if (sessionActive) {
