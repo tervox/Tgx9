@@ -1152,7 +1152,17 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   }
 
   public static InlineResultCommon createItem (BaseActivity context, Tdlib tdlib, ImageGalleryFile file) {
-    return createItem(context, tdlib, new File(file.getFilePath()), file, null, file.getDateTaken(), null, false);
+    String path = file.getFilePath();
+    // Do not wrap provider URIs in java.io.File: that changes content:// into
+    // an invalid local path and loses the MediaStore MIME/name during send.
+    if (path != null && path.startsWith("content://")) {
+      String title = Media.instance().getGalleryDisplayName(path);
+      if (StringUtils.isEmpty(title)) {
+        title = path;
+      }
+      return createItem(context, tdlib, path, R.drawable.baseline_insert_drive_file_24, title, Lang.getString(R.string.File));
+    }
+    return createItem(context, tdlib, new File(path), file, null, file.getDateTaken(), null, false);
   }
 
   public static InlineResultCommon createItem (BaseActivity context, Tdlib tdlib, String path, int iconRes, String title, String subtitle) {

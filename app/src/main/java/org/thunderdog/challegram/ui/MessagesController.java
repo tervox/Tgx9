@@ -10318,8 +10318,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
         // In a grouped file selection, silent videos must remain videos. Otherwise
         // TD.toInputMessageContent classifies short, audio-less videos as Animation,
         // which forces TD.toFunctions to split the album into small messages.
-        boolean allowAnimation = allowGifs && !needGroupMedia;
-        TdApi.InputMessageContent inputMessageContent = TD.toInputMessageContent(path, inputFile, info, caption, showCaptionAboveMedia, allowAudio, allowAnimation, allowVideos, allowDocs, false);
+        TdApi.InputMessageContent inputMessageContent;
+        if (allowVideos && isVideoPath(path, info)) {
+          inputMessageContent = createVideoContentForPath(path, inputFile, caption, showCaptionAboveMedia, false, isSecretChat);
+        } else {
+          boolean allowAnimation = allowGifs && !needGroupMedia;
+          inputMessageContent = TD.toInputMessageContent(path, inputFile, info, caption, showCaptionAboveMedia, allowAudio, allowAnimation, allowVideos, allowDocs, false);
+        }
         if (inputMessageContent == null) {
           restrictionFailed = true;
           break;
@@ -10415,6 +10420,46 @@ public class MessagesController extends ViewController<MessagesController.Argume
       lowerPath.endsWith(".webm") || lowerPath.endsWith(".avi") || lowerPath.endsWith(".3gp") ||
       lowerPath.endsWith(".m4v") || lowerPath.endsWith(".ts") || lowerPath.endsWith(".mts") ||
       lowerPath.endsWith(".m2ts") || lowerPath.endsWith(".flv");
+  }
+
+  private static boolean isVideoPath (String path, TD.FileInfo info) {
+    if (info != null && info.mimeType != null && info.mimeType.regionMatches(true, 0, "video/", 0, 6)) {
+      return true;
+    }
+    String name = info != null && info.title != null ? info.title : path;
+    if (name == null) {
+      return false;
+    }
+    String lowerName = name.toLowerCase(java.util.Locale.US);
+    return lowerName.endsWith(".mp4") || lowerName.endsWith(".mkv") || lowerName.endsWith(".mov") ||
+      lowerName.endsWith(".webm") || lowerName.endsWith(".avi") || lowerName.endsWith(".3gp") ||
+      lowerName.endsWith(".m4v") || lowerName.endsWith(".ts") || lowerName.endsWith(".mts") ||
+      lowerName.endsWith(".m2ts") || lowerName.endsWith(".flv");
+  }
+
+  private TdApi.InputMessageContent createVideoContentForPath (String path, TdApi.InputFile inputFile, @Nullable TdApi.FormattedText caption, boolean showCaptionAboveMedia, boolean hasSpoiler, boolean isSecretChat) {
+    int width = 1;
+    int height = 1;
+    int durationSeconds = 0;
+    MediaMetadataRetriever retriever = null;
+    try {
+      retriever = U.openRetriever(path);
+      width = Math.max(1, StringUtils.parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)));
+      height = Math.max(1, StringUtils.parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)));
+      int rotation = StringUtils.parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION));
+      if (rotation == 90 || rotation == 270) {
+        int swap = width;
+        width = height;
+        height = swap;
+      }
+      long durationMs = StringUtils.parseLong(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
+      durationSeconds = (int) Math.max(0L, durationMs / 1000L);
+    } catch (Throwable ignored) {
+      // Provider metadata may be unavailable; a video content object is still preferable to a document.
+    } finally {
+      U.closeRetriever(retriever);
+    }
+    return tdlib.filegen().createThumbnail(new TdApi.InputMessageVideo(inputFile, null, null, 0, null, durationSeconds, width, height, U.canStreamVideo(inputFile), caption, showCaptionAboveMedia, null, hasSpoiler), isSecretChat);
   }
 
   private static TdApi.InputMessageContent[] moveNonMediaAfterMedia (TdApi.InputMessageContent[] content) {
