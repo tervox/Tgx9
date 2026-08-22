@@ -42,7 +42,6 @@ public final class UploadNotificationManager {
   private static final int NOTIFICATION_ID = 55000;
   private static final long REFRESH_INTERVAL_MS = 350;
   private static final long FINISH_DELAY_MS = 900;
-  private static final long DONE_NOTIFICATION_DURATION_MS = 8000;
   private static final long FALLBACK_SUPPRESS_AFTER_FINISH_MS = 15000;
   private static final long MAX_IDLE_WAIT_MS = 120000;
   private static final long NETWORK_RECOVERY_INTERVAL_MS = 8000;
@@ -554,7 +553,6 @@ public final class UploadNotificationManager {
       context.getString(R.string.UploadNotificationDone),
       context.getString(R.string.UploadNotificationDoneText, completed),
       android.R.drawable.stat_sys_upload_done, false, 0, 0));
-    handler.postDelayed(() -> manager.cancel(NOTIFICATION_ID), DONE_NOTIFICATION_DURATION_MS);
   }
 
   private void ensureChannel (Context context) {
