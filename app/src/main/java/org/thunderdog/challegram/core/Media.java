@@ -207,9 +207,10 @@ public class Media {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       final List<String> projectionList = new ArrayList<>();
       if (allowVideos) {
-        Collections.addAll(projectionList,
+          Collections.addAll(projectionList,
           MediaStore.Files.FileColumns.MEDIA_TYPE,
           MediaStore.Files.FileColumns.MIME_TYPE,
+          MediaStore.Files.FileColumns.SIZE,
 
           MediaStore.Images.ImageColumns._ID,
           MediaStore.Images.ImageColumns.DATA,
@@ -226,6 +227,7 @@ public class Media {
         );
       } else {
         Collections.addAll(projectionList,
+          MediaStore.Files.FileColumns.SIZE,
           MediaStore.Images.ImageColumns._ID,
           MediaStore.Images.ImageColumns.DATA,
           MediaStore.Images.ImageColumns.DATE_MODIFIED,
@@ -246,6 +248,7 @@ public class Media {
         projection = new String[] {
           MediaStore.Files.FileColumns.MEDIA_TYPE,
           MediaStore.Files.FileColumns.MIME_TYPE,
+          MediaStore.Files.FileColumns.SIZE,
 
           MediaStore.Images.Media._ID,
           MediaStore.Images.Media.DATA,
@@ -261,6 +264,7 @@ public class Media {
         };
       } else {
         projection = new String[] {
+          MediaStore.Files.FileColumns.SIZE,
           MediaStore.Images.Media._ID,
           MediaStore.Images.Media.DATA,
           DATE_COLUMN,
@@ -411,7 +415,7 @@ public class Media {
   }
 
   private static final int MAX_NOMEDIA_SCAN_DEPTH = 12;
-  private static final int MAX_NOMEDIA_MEDIA = 2000;
+  private static final int MAX_NOMEDIA_MEDIA = 10000;
 
   private void collectNomediaMedia (File directory, ArrayList<ImageGalleryFile> output, Set<String> knownPaths, Set<String> visited, int depth) {
     if (directory == null || output.size() >= MAX_NOMEDIA_MEDIA || depth > MAX_NOMEDIA_SCAN_DEPTH || !directory.isDirectory() || !directory.canRead()) {
@@ -526,6 +530,7 @@ public class Media {
 
     final int mediaTypeColumn = c.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE);
     final int mimeTypeColumn = c.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE);
+    final int sizeColumn = c.getColumnIndex(MediaStore.Files.FileColumns.SIZE);
 
     final int imageIdColumn,
       dataColumn,
@@ -581,17 +586,18 @@ public class Media {
       try {
         long imageId = U.getLongOrInt(c, imageIdColumn);
         final boolean isVideo = mediaTypeColumn != -1 && c.getInt(mediaTypeColumn) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO;
+        final long providerSize = sizeColumn != -1 ? U.getLongOrInt(c, sizeColumn) : -1;
         String path = dataColumn != -1 ? c.getString(dataColumn) : null;
+        Uri mediaUri = isVideo ? MediaStore.Video.Media.getContentUri("external") : MediaStore.Images.Media.getContentUri("external");
         if (path == null || path.length() == 0) {
-          Uri mediaUri = isVideo ? MediaStore.Video.Media.getContentUri("external") : MediaStore.Images.Media.getContentUri("external");
           path = ContentUris.withAppendedId(mediaUri, imageId).toString();
-        }
-        // MediaStore can retain zero-byte placeholders after an interrupted
-        // download. Do not expose those rows as selectable media; content://
-        // rows are kept because scoped-storage providers may not expose DATA.
-        if (!path.startsWith("content://")) {
+        } else if (!path.startsWith("content://")) {
           File localFile = new File(path);
-          if (!localFile.isFile() || !localFile.canRead() || localFile.length() <= 0) {
+          // DATA is often stale on Android 10+. Keep the row through its
+          // provider URI instead of dropping a valid MediaStore item.
+          if (!localFile.isFile() || !localFile.canRead()) {
+            path = ContentUris.withAppendedId(mediaUri, imageId).toString();
+          } else if (providerSize == 0 || localFile.length() == 0) {
             continue;
           }
         }
@@ -695,16 +701,14 @@ public class Media {
         String bucketDisplayName = bucket != null ? bucket.name : c.getString(bucketNameColumn);
 
         if (width <= 0 || height <= 0) {
-          if (unknownSizeMediaCount == null) {
-            unknownSizeMediaCount = new HashMap<>();
+          // A provider may omit dimensions even though the media is valid.
+          // Keep non-empty rows with a safe aspect ratio; the thumbnail
+          // loader will decode the actual dimensions when it opens the URI.
+          if (providerSize == 0) {
+            continue;
           }
-          AtomicInteger counter = unknownSizeMediaCount.get(bucketDisplayName);
-          if (counter == null) {
-            unknownSizeMediaCount.put(bucketDisplayName, new AtomicInteger(1));
-          } else {
-            counter.incrementAndGet();
-          }
-          continue;
+          width = width > 0 ? width : 1;
+          height = height > 0 ? height : 1;
         }
 
         if (bucket == null) {

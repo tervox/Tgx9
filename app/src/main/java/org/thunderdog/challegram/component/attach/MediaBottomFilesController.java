@@ -1437,7 +1437,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           switch (path) {
             case KEY_GALLERY: {
               if (context.permissions().requestReadExternalStorage(Permissions.ReadType.IMAGES_AND_VIDEOS, grantType -> {
-                if (grantType == Permissions.GrantResult.ALL) {
+                if (grantType != Permissions.GrantResult.NONE) {
                   navigateTo(v, result);
                 } else {
                   // TODO 1-tap access to privacy settings?
@@ -1450,7 +1450,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             }
             case KEY_MUSIC: {
               if (context.permissions().requestReadExternalStorage(Permissions.ReadType.AUDIO, grantType -> {
-                if (grantType == Permissions.GrantResult.ALL) {
+                if (grantType != Permissions.GrantResult.NONE) {
                   navigateTo(v, result);
                 } else {
                   // TODO 1-tap access to privacy settings?

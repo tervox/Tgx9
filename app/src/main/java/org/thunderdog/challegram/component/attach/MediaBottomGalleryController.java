@@ -137,60 +137,60 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
         }
       }
     } else if (id == R.id.menu_btn_more) {
-      // Se está dentro de uma pasta e não é modo single, oferece selecionar todos
-      if (currentBucket != null && !inSingleMediaMode()) {
-        IntList ids = new IntList(5);
-        StringList strings = new StringList(5);
-        IntList icons = new IntList(5);
+      // Keep the original menu in both the root (Todas as mídias) and
+      // bucket screens. Select All is available only when a bucket exists.
+      IntList ids = new IntList(5);
+      StringList strings = new StringList(5);
+      IntList icons = new IntList(5);
 
+      if (currentBucket != null && !inSingleMediaMode()) {
         ids.append(R.id.btn_selectAll);
         strings.append(R.string.SelectAll);
         icons.append(R.drawable.baseline_playlist_add_check_24);
-
-        ids.append(R.id.btn_showInFiles);
-        strings.append(R.string.Gallery);
-        icons.append(R.drawable.baseline_image_24);
-
-        ids.append(R.id.btn_refresh);
-        strings.append(R.string.Refresh);
-        icons.append(R.drawable.baseline_file_download_24);
-
-        ids.append(R.id.btn_sortByName);
-        strings.append(R.string.SortByName);
-        icons.append(R.drawable.baseline_settings_24);
-
-        ids.append(R.id.btn_toggleHidden);
-        strings.append(showHiddenFiles ? R.string.HideHiddenFiles : R.string.ShowHiddenFiles);
-        icons.append(R.drawable.baseline_visibility_24);
-
-        showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
-          if (optionId == R.id.btn_selectAll) {
-            selectAllInCurrentBucket();
-          } else if (optionId == R.id.btn_showInFiles) {
-            mediaLayout.openGallery(false);
-          } else if (optionId == R.id.btn_refresh) {
-            refreshGallery();
-          } else if (optionId == R.id.btn_sortByName) {
-            showSortOptions();
-          } else if (optionId == R.id.btn_toggleHidden) {
-            showHiddenFiles = !showHiddenFiles;
-            if (showHiddenFiles && !context().permissions().canManageStorage()) {
-              if (context().permissions().requestManageStorage(mediaLayout.getContext())) {
-                return true;
-              }
-            }
-            refreshGallery();
-          }
-          return true;
-        });
-      } else {
-        mediaLayout.openGallery(false);
       }
+
+      ids.append(R.id.btn_showInFiles);
+      strings.append(R.string.Gallery);
+      icons.append(R.drawable.baseline_image_24);
+
+      ids.append(R.id.btn_refresh);
+      strings.append(R.string.Refresh);
+      icons.append(R.drawable.baseline_file_download_24);
+
+      ids.append(R.id.btn_sortByName);
+      strings.append(R.string.SortByName);
+      icons.append(R.drawable.baseline_settings_24);
+
+      ids.append(R.id.btn_toggleHidden);
+      strings.append(showHiddenFiles ? R.string.HideHiddenFiles : R.string.ShowHiddenFiles);
+      icons.append(R.drawable.baseline_visibility_24);
+
+      showOptions(null, ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
+        if (optionId == R.id.btn_selectAll) {
+          selectAllInCurrentBucket();
+        } else if (optionId == R.id.btn_showInFiles) {
+          mediaLayout.openGallery(false);
+        } else if (optionId == R.id.btn_refresh) {
+          refreshGallery();
+        } else if (optionId == R.id.btn_sortByName) {
+          showSortOptions();
+        } else if (optionId == R.id.btn_toggleHidden) {
+          showHiddenFiles = !showHiddenFiles;
+          if (showHiddenFiles && !context().permissions().canManageStorage()) {
+            if (context().permissions().requestManageStorage(mediaLayout.getContext())) {
+              return true;
+            }
+          }
+          refreshGallery();
+        }
+        return true;
+      });
     }
   }
 
   private void refreshGallery () {
     Media.instance().invalidateGalleryCache();
+    galleryLoadGeneration++;
     galleryLoaded = false;
     galleryLoading = false;
     galleryShown = false;
@@ -501,6 +501,7 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
   // Gallery
 
   private boolean galleryLoading;
+  private int galleryLoadGeneration;
   private Runnable onGalleryComplete;
 
   public void loadGalleryPhotos (Runnable onComplete) {
@@ -518,9 +519,13 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
     onGalleryComplete = onComplete;
     requestTime = SystemClock.uptimeMillis();
     final boolean includeHidden = showHiddenFiles;
+    final int generation = galleryLoadGeneration;
     Media.instance().post(() -> {
       final Media.Gallery loadedGallery = Media.instance().getGallery(includeHidden);
       UI.post(() -> {
+        if (generation != galleryLoadGeneration) {
+          return;
+        }
         Log.i("Received gallery in %dms", SystemClock.uptimeMillis() - requestTime);
         if (loadedGallery == null || loadedGallery.isEmpty()) {
           setError(loadedGallery != null);
