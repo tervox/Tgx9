@@ -169,6 +169,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private void refreshCurrentFolder () {
     Media.instance().invalidateGalleryCache();
+    synchronized (folderCache) {
+      folderCache.clear();
+    }
     if (stack.isEmpty()) {
       // Tela raiz — reconstroi a lista de pastas
       buildCells();
@@ -435,6 +438,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private void buildCells () {
     cancelCurrentLoadOperation();
+    if (adapter != null) {
+      adapter.setItems(Collections.singletonList(new ListItem(ListItem.TYPE_PROGRESS)), false);
+    }
     LoadOperation operation = buildRoot();
     operation.setCallbacks(() -> {}, null);
     this.currentLoadOperation = operation;
@@ -642,6 +648,21 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     adapter.setItems(items, false);
 
     if (extend && !isExpanded()) {
+      expandFully();
+    }
+  }
+
+  private void appendFilesItems (final LoadOperation operation, final ArrayList<ListItem> items) {
+    if (items == null || items.isEmpty()) return;
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      UI.post(() -> appendFilesItems(operation, items));
+      return;
+    }
+    if (operation != null && (this.currentLoadOperation != operation || operation.isCancelled() || isDestroyed())) {
+      return;
+    }
+    adapter.addItems(adapter.getItemCount(), items.toArray(new ListItem[0]));
+    if (!isExpanded()) {
       expandFully();
     }
   }
@@ -1099,6 +1120,18 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
   private LoadOperation currentLoadOperation;
 
+  private static final class FolderCache {
+    final long modified;
+    final ArrayList<File> files;
+
+    FolderCache (long modified, ArrayList<File> files) {
+      this.modified = modified;
+      this.files = files;
+    }
+  }
+
+  private final java.util.HashMap<String, FolderCache> folderCache = new java.util.HashMap<>();
+
   private void cancelCurrentLoadOperation () {
     if (currentLoadOperation != null) {
       currentLoadOperation.cancel();
@@ -1125,27 +1158,52 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             return null;
           }
 
-          ArrayList<File> filesList = new ArrayList<>();
-          File[] files = dir.listFiles();
-          if (files != null) {
-            for (File file : files) {
-              String name = file.getName();
-              if (".nomedia".equalsIgnoreCase(name)) {
-                continue;
-              }
-              if (!showHiddenFiles && name.startsWith(".")) {
-                continue;
-              }
-              if (file.isDirectory()) {
-                // Keep real directories in the list; Android may report
-                // canRead() conservatively even when listFiles() works.
-              } else if (!file.isFile()) {
-                continue;
-              }
-              filesList.add(file);
+          final long directoryModified = dir.lastModified();
+          ArrayList<File> filesList = null;
+          synchronized (folderCache) {
+            FolderCache cached = folderCache.get(path);
+            if (cached != null && cached.modified == directoryModified) {
+              filesList = new ArrayList<>(cached.files);
             }
           }
-          Collections.sort(filesList, MediaBottomFilesController.this);
+
+          if (filesList == null) {
+            filesList = new ArrayList<>();
+            File[] files = dir.listFiles();
+            if (files != null) {
+              for (File file : files) {
+                String name = file.getName();
+                if (".nomedia".equalsIgnoreCase(name)) {
+                  continue;
+                }
+                if (!showHiddenFiles && name.startsWith(".")) {
+                  continue;
+                }
+                if (file.isDirectory()) {
+                  // Keep real directories in the list; Android may report
+                  // canRead() conservatively even when listFiles() works.
+                } else if (!file.isFile()) {
+                  continue;
+                } else {
+                  // Android/Telegram can leave zero-byte temporary entries in
+                  // shared storage. They cannot be opened or uploaded and make
+                  // large folders look full of phantom files.
+                  try {
+                    if (file.length() <= 0L) {
+                      continue;
+                    }
+                  } catch (Throwable ignored) {
+                    continue;
+                  }
+                }
+                filesList.add(file);
+              }
+            }
+            Collections.sort(filesList, MediaBottomFilesController.this);
+            synchronized (folderCache) {
+              folderCache.put(path, new FolderCache(directoryModified, new ArrayList<>(filesList)));
+            }
+          }
 
           ArrayList<ListItem> items = new ArrayList<>(filesList.size() + 1);
           items.add(createItem(createItem(context, tdlib, KEY_UPPER, R.drawable.baseline_folder_24, "..", StringUtils.isEmpty(parent) ? Lang.getString(R.string.AttachFolderHome) : parent), R.id.btn_folder_upper));
@@ -1154,8 +1212,23 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
             addApplicationFolders(items);
           }
 
-          for (File file : filesList) {
-            items.add(createItem(createItem(context, tdlib, file, null), file.isDirectory() ? R.id.btn_folder : R.id.btn_file));
+          // Publish the navigation row before creating every file card. The
+          // remainder is appended in small batches so a folder with many
+          // entries becomes usable while it is still being enumerated.
+          setFilesItems(this, new ArrayList<>(items), true);
+          final int batchSize = 48;
+          for (int start = 0; start < filesList.size(); start += batchSize) {
+            if (isCancelled()) {
+              return null;
+            }
+            final int end = Math.min(filesList.size(), start + batchSize);
+            ArrayList<ListItem> batch = new ArrayList<>(end - start);
+            for (int i = start; i < end; i++) {
+              File file = filesList.get(i);
+              batch.add(createItem(createItem(context, tdlib, file, null), file.isDirectory() ? R.id.btn_folder : R.id.btn_file));
+              items.add(batch.get(batch.size() - 1));
+            }
+            appendFilesItems(this, batch);
           }
 
           return new Result(items, true);
@@ -1650,9 +1723,20 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     final View firstView = firstPosition != RecyclerView.NO_POSITION ? manager.findViewByPosition(firstPosition) : null;
     final int firstPositionOffset = firstView != null ? firstView.getTop() : 0;
 
-    navigateToPath(view, path, getLastPath(1), false, data, () -> {
-      stack.add(new StackItem(path, firstPosition != RecyclerView.NO_POSITION ? firstPosition : 0, firstPositionOffset));
-      manager.scrollToPositionWithOffset(0, 0);
+    // Replace the old list immediately. Directory enumeration and item
+    // creation stay on Background, so a large folder no longer appears to
+    // freeze the attachment sheet while it is being opened.
+    adapter.setItems(Collections.singletonList(new ListItem(ListItem.TYPE_PROGRESS)), false);
+    if (!isExpanded()) {
+      expandFully();
+    }
+    
+    navigateToPath(view, path, getLastPath(1), false, data, new Runnable() {
+      @Override
+      public void run () {
+        stack.add(new StackItem(path, firstPosition != RecyclerView.NO_POSITION ? firstPosition : 0, firstPositionOffset));
+        manager.scrollToPositionWithOffset(0, 0);
+      }
     }, null);
   }
 
