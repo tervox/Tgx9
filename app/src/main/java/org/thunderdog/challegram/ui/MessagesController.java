@@ -10379,6 +10379,34 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  private static TdApi.InputMessageContent[] moveAnimationsAfterMedia (TdApi.InputMessageContent[] content) {
+    if (content == null || content.length < 2) {
+      return content;
+    }
+    int animationCount = 0;
+    for (TdApi.InputMessageContent item : content) {
+      if (item != null && item.getConstructor() == TdApi.InputMessageAnimation.CONSTRUCTOR) {
+        animationCount++;
+      }
+    }
+    if (animationCount == 0 || animationCount == content.length) {
+      return content;
+    }
+    TdApi.InputMessageContent[] reordered = new TdApi.InputMessageContent[content.length];
+    int index = 0;
+    for (TdApi.InputMessageContent item : content) {
+      if (item == null || item.getConstructor() != TdApi.InputMessageAnimation.CONSTRUCTOR) {
+        reordered[index++] = item;
+      }
+    }
+    for (TdApi.InputMessageContent item : content) {
+      if (item != null && item.getConstructor() == TdApi.InputMessageAnimation.CONSTRUCTOR) {
+        reordered[index++] = item;
+      }
+    }
+    return reordered;
+  }
+
   public boolean sendPhotosAndVideosCompressed (final ImageGalleryFile[] files, final boolean needGroupMedia, final TdApi.MessageSendOptions modifiedSendOptions, boolean disableMarkdown, boolean asFiles, boolean showCaptionAboveMedia, boolean hasSpoiler) {
     if (files == null || files.length == 0) {
       return false;
@@ -10486,8 +10514,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
         inputContent[i] = content;
         i++;
       }
-      List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, inputContent, needGroupMedia);
-      Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b prepMs=%d functions=%d", files.length, asFiles, needGroupMedia, SystemClock.uptimeMillis() - preparationStartedAt, functions.size());
+      TdApi.InputMessageContent[] contentForFunctions = needGroupMedia ? moveAnimationsAfterMedia(inputContent) : inputContent;
+      List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, contentForFunctions, needGroupMedia);
+      Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b prepMs=%d functions=%d reordered=%b", files.length, asFiles, needGroupMedia, SystemClock.uptimeMillis() - preparationStartedAt, functions.size(), contentForFunctions != inputContent);
       int uploadCount = UploadNotificationManager.countUploadItems(functions);
       if (uploadCount > 0) {
         UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);

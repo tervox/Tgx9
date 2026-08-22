@@ -42,6 +42,8 @@ public final class UploadNotificationManager {
   private static final int NOTIFICATION_ID = 55000;
   private static final long REFRESH_INTERVAL_MS = 350;
   private static final long FINISH_DELAY_MS = 900;
+  private static final long DONE_NOTIFICATION_DURATION_MS = 8000;
+  private static final long FALLBACK_SUPPRESS_AFTER_FINISH_MS = 15000;
   private static final long MAX_IDLE_WAIT_MS = 120000;
   private static final long NETWORK_RECOVERY_INTERVAL_MS = 8000;
 
@@ -71,6 +73,7 @@ public final class UploadNotificationManager {
   private long batchStartUptime;
   private long firstUploadUptime;
   private long batchUploadedBytes;
+  private long suppressFallbackUntil;
   private long lastEventUptime;
   private long lastRefreshUptime;
   private boolean refreshPosted;
@@ -162,6 +165,7 @@ public final class UploadNotificationManager {
       if (!sessionActive) {
         activeFiles.clear();
         uploadedBytesByFile.clear();
+        suppressFallbackUntil = 0;
         startedFileIds.clear();
         completedFileIds.clear();
         completedMessageKeys.clear();
@@ -209,6 +213,9 @@ public final class UploadNotificationManager {
     boolean shouldFinish = false;
     synchronized (lock) {
       if (!sessionActive) {
+        if (SystemClock.uptimeMillis() < suppressFallbackUntil) {
+          return;
+        }
         // Fallback for send paths that do not expose a selection count.
         sessionActive = true;
         expectedCount = 1;
@@ -325,6 +332,7 @@ public final class UploadNotificationManager {
       batchStartUptime = 0;
       firstUploadUptime = 0;
       batchUploadedBytes = 0;
+      suppressFallbackUntil = SystemClock.uptimeMillis() + FALLBACK_SUPPRESS_AFTER_FINISH_MS;
       activeTdlib = null;
       cancelFinishLocked();
       cancelIdleLocked();
@@ -338,6 +346,11 @@ public final class UploadNotificationManager {
   private void postNotificationUpdate (final Context context, final boolean immediate) {
     handler.post(() -> {
       try {
+        synchronized (lock) {
+          if (!sessionActive) {
+            return;
+          }
+        }
         startUploadService(context);
         acquireWakeLock(context);
         if (immediate) {
@@ -451,6 +464,7 @@ public final class UploadNotificationManager {
       batchStartUptime = 0;
       firstUploadUptime = 0;
       batchUploadedBytes = 0;
+      suppressFallbackUntil = SystemClock.uptimeMillis() + FALLBACK_SUPPRESS_AFTER_FINISH_MS;
       activeTdlib = null;
       finishRunnable = null;
       cancelIdleLocked();
@@ -540,7 +554,7 @@ public final class UploadNotificationManager {
       context.getString(R.string.UploadNotificationDone),
       context.getString(R.string.UploadNotificationDoneText, completed),
       android.R.drawable.stat_sys_upload_done, false, 0, 0));
-    handler.postDelayed(() -> manager.cancel(NOTIFICATION_ID), 4500);
+    handler.postDelayed(() -> manager.cancel(NOTIFICATION_ID), DONE_NOTIFICATION_DURATION_MS);
   }
 
   private void ensureChannel (Context context) {
