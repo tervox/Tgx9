@@ -34,26 +34,23 @@ jobs:
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaBottomFilesController.java \
              tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/telegram/UploadNotificationManager.java \
-            tgx/app/src/main/java/org/thunderdog/challegram/telegram/
+             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/core/Media.java \
              tgx/app/src/main/java/org/thunderdog/challegram/core/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/U.java \
              tgx/app/src/main/java/org/thunderdog/challegram/
-
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/telegram/Tdlib.java \
-            tgx/app/src/main/java/org/thunderdog/challegram/telegram/
+             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/ui/MessagesController.java \
-            tgx/app/src/main/java/org/thunderdog/challegram/ui/
+             tgx/app/src/main/java/org/thunderdog/challegram/ui/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/ui/SettingsNotificationController.java \
-            tgx/app/src/main/java/org/thunderdog/challegram/ui/
+             tgx/app/src/main/java/org/thunderdog/challegram/ui/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaLayout.java \
-            tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
+             tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
           # Fix tgcalls libs
           sed -i '2a set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/../tgcalls)' \
-            tgx/app/jni/tgvoip/CMakeLists.txt
-          # Add strings and IDs via Python (reliable, no sed anchor issues)
+             tgx/app/jni/tgvoip/CMakeLists.txt
           python3 tgx9-mods/patch_files.py
-          # Verify the complete Java files copied above; these checks are idempotent.
           python3 tgx9-mods/patch_tdlib.py
           python3 tgx9-mods/patch_messages.py
           python3 tgx9-mods/patch_manifest.py
