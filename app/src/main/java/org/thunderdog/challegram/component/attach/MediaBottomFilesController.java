@@ -626,7 +626,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     return new LoadOperation(this) {
       @Override
       public Result act () {
-        Media.Gallery gallery = Media.instance().getGallery();
+        Media.Gallery gallery = Media.instance().getGallery(showHiddenFiles);
 
         if (gallery == null) {
           openAlert(this, R.string.AppName, R.string.AccessError);
@@ -675,6 +675,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.Folders));
         }
 
+        sortGalleryBucketsByName(gallery);
         for (Media.GalleryBucket bucket : buckets) {
           if (bucket != allBucket) {
             InlineResult<?> result = createItem(context, tdlib, bucket);
@@ -690,6 +691,34 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         return null;
       }
     };
+  }
+
+  private void sortGalleryBucketsByName (Media.Gallery gallery) {
+    if (gallery == null) return;
+    Comparator<ImageFile> comparator = (first, second) -> {
+      if (!(first instanceof ImageGalleryFile) || !(second instanceof ImageGalleryFile)) return 0;
+      String firstPath = first.getFilePath();
+      String secondPath = second.getFilePath();
+      String firstName = firstPath != null ? Media.instance().getGalleryDisplayName(firstPath) : null;
+      String secondName = secondPath != null ? Media.instance().getGalleryDisplayName(secondPath) : null;
+      if (StringUtils.isEmpty(firstName)) firstName = firstPath != null ? firstPath : "";
+      if (StringUtils.isEmpty(secondName)) secondName = secondPath != null ? secondPath : "";
+      int result = compareNatural(firstName.toLowerCase(java.util.Locale.ROOT), secondName.toLowerCase(java.util.Locale.ROOT));
+      if (result != 0) return result;
+      return Long.compare(((ImageGalleryFile) second).getGalleryId(), ((ImageGalleryFile) first).getGalleryId());
+    };
+    ArrayList<Media.GalleryBucket> buckets = gallery.getBuckets();
+    for (Media.GalleryBucket bucket : buckets) {
+      Collections.sort(bucket.getMedia(), comparator);
+    }
+    Collections.sort(buckets, (first, second) -> {
+      if (first == gallery.getAllMediaBucket()) return 1;
+      if (second == gallery.getAllMediaBucket()) return -1;
+      String firstName = first.getName() != null ? first.getName() : "";
+      String secondName = second.getName() != null ? second.getName() : "";
+      int result = compareNatural(firstName.toLowerCase(java.util.Locale.ROOT), secondName.toLowerCase(java.util.Locale.ROOT));
+      return result != 0 ? result : Long.compare(first.getId(), second.getId());
+    });
   }
 
   private LoadOperation buildBucket (final InlineResultCommon data) {
@@ -759,6 +788,17 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
                 entries.add(new FileEntry(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL, id), id, displayName, size, data, mimeType, dateAdded, dateModified));
               }
             }
+
+            Collections.sort(entries, (first, second) -> {
+              if (sortMode == 1) {
+                return compareNatural(first.displayName != null ? first.displayName : "", second.displayName != null ? second.displayName : "");
+              } else if (sortMode == 2) {
+                return compareNatural(second.displayName != null ? second.displayName : "", first.displayName != null ? first.displayName : "");
+              }
+              long firstTime = Math.max(first.dateModified, first.dateAdded);
+              long secondTime = Math.max(second.dateModified, second.dateAdded);
+              return Long.compare(secondTime, firstTime);
+            });
 
             if (entries.isEmpty()) {
               openAlert(this, R.string.AppName, R.string.NoDownloadFilesFound);

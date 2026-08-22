@@ -526,18 +526,28 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
     final boolean includeHidden = showHiddenFiles;
     final int generation = galleryLoadGeneration;
     Media.instance().post(() -> {
-      final Media.Gallery loadedGallery = Media.instance().getGallery(includeHidden);
+      Media.Gallery loadedGallery = null;
+      boolean loadFailed = false;
+      try {
+        loadedGallery = Media.instance().getGallery(includeHidden);
+      } catch (Throwable t) {
+        loadFailed = true;
+        Log.e("Cannot load gallery", t);
+      }
+      final Media.Gallery resultGallery = loadedGallery;
+      final boolean failed = loadFailed;
       UI.post(() -> {
         if (generation != galleryLoadGeneration) {
+          galleryLoading = false;
           return;
         }
         Log.i("Received gallery in %dms", SystemClock.uptimeMillis() - requestTime);
-        if (loadedGallery == null || loadedGallery.isEmpty()) {
-          setError(loadedGallery != null);
+        if (failed || resultGallery == null || resultGallery.isEmpty()) {
+          setError(!failed && resultGallery != null);
         } else {
           hasGalleryAccess = true;
-          sortGallery(loadedGallery);
-          setGallery(loadedGallery);
+          sortGallery(resultGallery);
+          setGallery(resultGallery);
         }
         if (onGalleryComplete != null) {
           onGalleryComplete.run();

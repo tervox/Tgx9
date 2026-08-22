@@ -603,19 +603,21 @@ public final class UploadNotificationManager {
     public void onCreate () {
       super.onCreate();
       running = true;
-      Context context = getApplicationContext();
-      instance().ensureChannel(context);
-      Notification notification = instance().buildNotification(context,
-        context.getString(R.string.UploadNotificationTitle),
-        context.getString(R.string.UploadNotificationPreparing, 0),
-        android.R.drawable.stat_sys_upload, true, 100, 0);
       try {
+        Context context = getApplicationContext();
+        instance().ensureChannel(context);
+        Notification notification = instance().buildNotification(context,
+          context.getString(R.string.UploadNotificationTitle),
+          context.getString(R.string.UploadNotificationPreparing, 0),
+          android.R.drawable.stat_sys_upload, true, 100, 0);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
           startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } else {
           startForeground(NOTIFICATION_ID, notification);
         }
-      } catch (Throwable ignored) {
+      } catch (Throwable t) {
+        Log.e("UploadService foreground start failed", t);
+        running = false;
         stopSelf();
       }
     }
@@ -626,7 +628,9 @@ public final class UploadNotificationManager {
         stopSelfResult(startId);
         return START_NOT_STICKY;
       }
-      return START_STICKY;
+      // TDLib owns the upload lifecycle. Do not ask Android to recreate this
+      // notification helper after the process is killed with no UI context.
+      return START_NOT_STICKY;
     }
 
     @Override

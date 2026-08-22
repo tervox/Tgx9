@@ -404,6 +404,11 @@ public class U {
           results.add(path);
         }
       }
+      // Android 4.4+ already exposes mounted shared volumes through
+      // getExternalFilesDirs. Avoid the legacy shell process here: this
+      // method is called while the attachment root is being built and a
+      // slow mount provider would block the UI before Arquivo appears.
+      return results;
     }
 
     if (results == null) { //Method 2 for all versions

@@ -6303,11 +6303,15 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
    */
   public void ensureNetworkActiveForUpload () {
     runOnTdlibThread(() -> {
-      if (isPaused()) {
-        initializeIfWaiting();
-      }
-      if (connectionState != ConnectionState.CONNECTED) {
-        resolveConnectionIssues(false);
+      try {
+        if (isPaused()) {
+          initializeIfWaiting();
+        }
+        if (connectionState != ConnectionState.CONNECTED && networkType != null) {
+          setNetworkType(networkType);
+        }
+      } catch (Throwable t) {
+        Log.e("Upload network wake failed", t);
       }
     });
   }
@@ -8927,12 +8931,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   @TdlibThread
   private void resolveConnectionIssues (boolean byUserRequest) {
     Settings settings = Settings.instance();
-    if (!byUserRequest && (!settings.checkProxySetting(Settings.PROXY_FLAG_SWITCH_AUTOMATICALLY) || !settings.hasProxyConfiguration())) {
-      // The route selector is only useful with automatic proxy switching. For
-      // direct connections still wake TDLib by resending the current network
-      // type, then keep the resolver alive for the next network callback.
-      context.onConnectionAwake();
-      scheduleConnectionResolver();
+    if ((!byUserRequest && !settings.checkProxySetting(Settings.PROXY_FLAG_SWITCH_AUTOMATICALLY)) || !settings.hasProxyConfiguration()) {
       return;
     }
     if (routeSelector != null && !byUserRequest) {
