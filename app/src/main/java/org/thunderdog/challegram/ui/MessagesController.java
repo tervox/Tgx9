@@ -10379,28 +10379,39 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
-  private static TdApi.InputMessageContent[] moveAnimationsAfterMedia (TdApi.InputMessageContent[] content) {
+  private static boolean isGifFile (ImageGalleryFile file) {
+    if (file == null) {
+      return false;
+    }
+    if ("image/gif".equalsIgnoreCase(file.getVideoMimeType())) {
+      return true;
+    }
+    String path = file.getFilePath();
+    return path != null && path.length() >= 4 && path.regionMatches(true, path.length() - 4, ".gif", 0, 4);
+  }
+
+  private static TdApi.InputMessageContent[] moveNonMediaAfterMedia (TdApi.InputMessageContent[] content) {
     if (content == null || content.length < 2) {
       return content;
     }
-    int animationCount = 0;
+    int mediaCount = 0;
     for (TdApi.InputMessageContent item : content) {
-      if (item != null && item.getConstructor() == TdApi.InputMessageAnimation.CONSTRUCTOR) {
-        animationCount++;
+      if (TD.getCombineMode(item) == TD.COMBINE_MODE_MEDIA) {
+        mediaCount++;
       }
     }
-    if (animationCount == 0 || animationCount == content.length) {
+    if (mediaCount == 0 || mediaCount == content.length) {
       return content;
     }
     TdApi.InputMessageContent[] reordered = new TdApi.InputMessageContent[content.length];
     int index = 0;
     for (TdApi.InputMessageContent item : content) {
-      if (item == null || item.getConstructor() != TdApi.InputMessageAnimation.CONSTRUCTOR) {
+      if (TD.getCombineMode(item) == TD.COMBINE_MODE_MEDIA) {
         reordered[index++] = item;
       }
     }
     for (TdApi.InputMessageContent item : content) {
-      if (item != null && item.getConstructor() == TdApi.InputMessageAnimation.CONSTRUCTOR) {
+      if (TD.getCombineMode(item) != TD.COMBINE_MODE_MEDIA) {
         reordered[index++] = item;
       }
     }
@@ -10475,14 +10486,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
             }
             long duration = file.getVideoDuration(true);
             if (duration > 0 && width > 0 && height > 0 && knownSize > 0) {
-              if (sendAsAnimation && duration < 30000L && knownSize < 10L * 1024L * 1024L) {
+              if (isGifFile(file) && duration < 30000L && knownSize < 10L * 1024L * 1024L) {
                 content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, (int) (duration / 1000L), width, height, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
               } else {
                 content = tdlib.filegen().createThumbnail(new TdApi.InputMessageVideo(inputVideo, null, null, 0, null, (int) (duration / 1000L), width, height, U.canStreamVideo(inputVideo), caption, showCaptionAboveMedia, null, hasSpoiler), isSecretChat);
               }
             } else {
               // Preserve the original metadata fallback for provider URIs or incomplete MediaStore rows.
-              content = tdlib.filegen().createThumbnail(TD.toInputMessageContent(file.getFilePath(), inputVideo, fileInfo, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
+              // Never infer Animation from silence/mute here: ordinary silent videos
+              // must remain videos so they can stay in the same media album.
+              content = tdlib.filegen().createThumbnail(TD.toInputMessageContent(file.getFilePath(), inputVideo, fileInfo, caption, true, false, true, true, showCaptionAboveMedia, hasSpoiler), isSecretChat);
             }
           } else if (sendAsAnimation && file.getSelfDestructType() == null && (files.length == 1 || !needGroupMedia)) {
             content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, file.getVideoDuration(true), width, height, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
@@ -10514,7 +10527,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         inputContent[i] = content;
         i++;
       }
-      TdApi.InputMessageContent[] contentForFunctions = needGroupMedia ? moveAnimationsAfterMedia(inputContent) : inputContent;
+      TdApi.InputMessageContent[] contentForFunctions = needGroupMedia ? moveNonMediaAfterMedia(inputContent) : inputContent;
       List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, contentForFunctions, needGroupMedia);
       Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b prepMs=%d functions=%d reordered=%b", files.length, asFiles, needGroupMedia, SystemClock.uptimeMillis() - preparationStartedAt, functions.size(), contentForFunctions != inputContent);
       int uploadCount = UploadNotificationManager.countUploadItems(functions);
