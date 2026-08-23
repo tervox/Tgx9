@@ -266,6 +266,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -10051,9 +10054,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (uploadCount > 0) {
       UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
     }
-    for (TdApi.Function<?> function : functions) {
-      tdlib.client().send(function, tdlib.messageHandler());
-    }
+    dispatchUploadFunctions(functions);
   }
 
   private List<TdApi.Function<?>> getSendMusicFunctions (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
@@ -10279,10 +10280,34 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (uploadCount > 0) {
         UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
       }
-      for (TdApi.Function<?> function : functions) {
-        tdlib.client().send(function, tdlib.messageHandler());
-      }
+      dispatchUploadFunctions(functions);
     });
+  }
+
+  /**
+   * Sends every function in the list and, unlike a bare tdlib.client().send loop,
+   * also tells UploadNotificationManager about functions that fail at the RPC
+   * level (e.g. "Wrong file identifier"). Those never produce an
+   * UpdateMessageSendSucceeded/Failed event, since no message was ever created
+   * for them - without this, the batch counter can get permanently stuck below
+   * its expected total and the upload foreground service/notification never
+   * gets torn down until the unconditional idle timeout.
+   */
+  private void dispatchUploadFunctions (List<TdApi.Function<?>> functions) {
+    if (functions == null || functions.isEmpty()) {
+      return;
+    }
+    final Tdlib tdlibRef = tdlib;
+    for (TdApi.Function<?> function : functions) {
+      tdlibRef.client().send(function, result -> {
+        if (result != null && result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
+          TdApi.Error error = (TdApi.Error) result;
+          Log.i("TGX9_DISPATCH_ERROR: code=%d message=%s", error.code, error.message);
+          UploadNotificationManager.instance().onDispatchFailed(1, tdlibRef);
+        }
+        tdlibRef.messageHandler().onResult(result);
+      });
+    }
   }
 
   private void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions, RunnableData<List<TdApi.Function<?>>> onReadyToSend) {
@@ -10387,7 +10412,15 @@ public class MessagesController extends ViewController<MessagesController.Argume
         TdApi.InputFileGenerated inputFile = PhotoGenerationInfo.newFile(path, U.getRotationForExifOrientation(orientation));
         TdApi.InputMessagePhoto photo = tdlib.filegen().createThumbnail(new TdApi.InputMessagePhoto(inputFile, null, null, width, height, null, false, selfDestructType, false), isSecret);
         UploadNotificationManager.instance().beginBatch(1, tdlib);
-        tdlib.sendMessage(chatId, topicId, replyTo, sendOptions, photo);
+        tdlib.sendMessage(chatId, topicId, replyTo, sendOptions, photo, message -> {
+          if (message == null) {
+            // tdlib.sendMessage() reports a null message on an RPC-level error
+            // (e.g. "Wrong file identifier"); without this, that single-item
+            // batch never sees a terminal event and the upload notification/
+            // foreground service is left running until the idle timeout.
+            UploadNotificationManager.instance().onDispatchFailed(1, tdlib);
+          }
+        });
       });
     }
   }
@@ -10512,32 +10545,71 @@ public class MessagesController extends ViewController<MessagesController.Argume
     Media.instance().post(() -> {
       final long preparationStartedAt = SystemClock.uptimeMillis();
       final TdApi.InputMessageContent[] inputContent = new TdApi.InputMessageContent[files.length];
+      final boolean[] sendAsAnimationFlags = new boolean[files.length];
+
+      // Phase 1: metadata scan. MediaMetadataRetriever.extractMetadata() is the
+      // slow, blocking step here, and previously ran once per file, one file at
+      // a time, on this single Media thread - so file #10 could not even begin
+      // reaching TDLib until files #1-9 had each been scanned in turn. Each
+      // ImageGalleryFile is independent (its own path, its own retriever
+      // instance), so this part is safe to run concurrently; the TDLib-facing
+      // filegen().createThumbnail() calls below stay untouched and strictly
+      // serial, in original order, exactly as before.
+      final long metadataStartedAt = SystemClock.uptimeMillis();
+      int poolSize = Math.max(1, Math.min(3, Math.min(files.length, Runtime.getRuntime().availableProcessors())));
+      ExecutorService metadataExecutor = Executors.newFixedThreadPool(poolSize);
+      CountDownLatch metadataLatch = new CountDownLatch(files.length);
+      for (int a = 0; a < files.length; a++) {
+        final int index = a;
+        final ImageGalleryFile scanFile = files[a];
+        metadataExecutor.execute(() -> {
+          try {
+            if (scanFile.getSelfDestructType() != null && asFiles) {
+              return; // Same case is re-checked (and thrown) on the Media thread below.
+            }
+            if (scanFile.isVideo() || isVideoFile(scanFile)) {
+              boolean sendAsAnimation = scanFile.shouldMuteVideo();
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+                MediaMetadataRetriever retriever = null;
+                try {
+                  retriever = U.openRetriever(scanFile.getFilePath());
+                  if (!sendAsAnimation) {
+                    String hasAudioStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO);
+                    if (StringUtils.isEmpty(hasAudioStr) || !StringUtils.equalsOrBothEmpty(hasAudioStr.toLowerCase(), "yes")) {
+                      sendAsAnimation = true;
+                    }
+                  }
+                  String rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+                  if (StringUtils.isNumeric(rotation)) {
+                    scanFile.setRotation(StringUtils.parseInt(rotation));
+                  }
+                } catch (Throwable ignored) {
+                  // Doing nothing
+                }
+                U.closeRetriever(retriever);
+              }
+              sendAsAnimationFlags[index] = sendAsAnimation;
+            }
+          } finally {
+            metadataLatch.countDown();
+          }
+        });
+      }
+      try {
+        metadataLatch.await();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      metadataExecutor.shutdown();
+      final long metadataMs = SystemClock.uptimeMillis() - metadataStartedAt;
+
       int i = 0;
       for (ImageGalleryFile file : files) {
         if (file.getSelfDestructType() != null && asFiles)
           throw new IllegalArgumentException();
         TdApi.InputMessageContent content;
         if (file.isVideo() || isVideoFile(file)) {
-          boolean sendAsAnimation = file.shouldMuteVideo();
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            MediaMetadataRetriever retriever = null;
-            try {
-              retriever = U.openRetriever(file.getFilePath());
-              if (!sendAsAnimation) {
-                String hasAudioStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO);
-                if (StringUtils.isEmpty(hasAudioStr) || !StringUtils.equalsOrBothEmpty(hasAudioStr.toLowerCase(), "yes")) {
-                  sendAsAnimation = true;
-                }
-              }
-              String rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
-              if (StringUtils.isNumeric(rotation)) {
-                file.setRotation(StringUtils.parseInt(rotation));
-              }
-            } catch (Throwable ignored) {
-              // Doing nothing
-            }
-            U.closeRetriever(retriever);
-          }
+          boolean sendAsAnimation = sendAsAnimationFlags[i];
 
           int[] size = new int[2];
           file.getOutputSize(size);
@@ -10599,15 +10671,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       TdApi.InputMessageContent[] contentForFunctions = needGroupMedia ? moveNonMediaAfterMedia(inputContent) : inputContent;
       List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, contentForFunctions, needGroupMedia);
-      Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b prepMs=%d functions=%d reordered=%b", files.length, asFiles, needGroupMedia, SystemClock.uptimeMillis() - preparationStartedAt, functions.size(), contentForFunctions != inputContent);
+      Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b metadataMs=%d prepMs=%d functions=%d reordered=%b", files.length, asFiles, needGroupMedia, metadataMs, SystemClock.uptimeMillis() - preparationStartedAt, functions.size(), contentForFunctions != inputContent);
       int uploadCount = UploadNotificationManager.countUploadItems(functions);
       if (uploadCount > 0) {
         UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
       }
       long dispatchStartedAt = SystemClock.uptimeMillis();
-      for (TdApi.Function<?> function : functions) {
-        tdlib.client().send(function, tdlib.messageHandler());
-      }
+      dispatchUploadFunctions(functions);
       Log.i("TGX9_SEND_MEDIA_DISPATCH: count=%d asFiles=%b functions=%d dispatchMs=%d", files.length, asFiles, functions.size(), SystemClock.uptimeMillis() - dispatchStartedAt);
     });
 

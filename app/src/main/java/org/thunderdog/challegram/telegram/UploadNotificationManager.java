@@ -310,6 +310,43 @@ public final class UploadNotificationManager {
     }
   }
 
+  /**
+   * Counts an item as finished when it failed at the RPC-call level (e.g. a
+   * "Wrong file identifier" error returned directly from SendMessage /
+   * SendMessageAlbum) rather than after being accepted. Those items never get
+   * a TdApi.Message, so they never fire UpdateMessageSendSucceeded/Failed and
+   * would otherwise hold the batch below its expected total forever - only the
+   * unconditional MAX_IDLE_WAIT_MS timeout would eventually close it out.
+   */
+  public void onDispatchFailed (int count, Tdlib tdlib) {
+    if (count <= 0) {
+      return;
+    }
+    Context context = UI.getAppContext();
+    if (context == null) {
+      return;
+    }
+    boolean shouldFinish = false;
+    synchronized (lock) {
+      if (!sessionActive) {
+        return;
+      }
+      if (tdlib != null) {
+        activeTdlib = tdlib;
+      }
+      completedCount = Math.min(expectedCount, completedCount + count);
+      lastEventUptime = SystemClock.uptimeMillis();
+      cancelFinishLocked();
+      scheduleIdleCheckLocked(context);
+      scheduleRecoveryLocked();
+      shouldFinish = completedCount >= expectedCount;
+      if (shouldFinish) {
+        scheduleFinishLocked(context);
+      }
+    }
+    postNotificationUpdate(context, false);
+  }
+
   public boolean hasActiveSession () {
     synchronized (lock) {
       return sessionActive;
