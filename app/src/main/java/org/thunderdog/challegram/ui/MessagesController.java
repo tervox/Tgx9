@@ -10054,7 +10054,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (uploadCount > 0) {
       UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
     }
-    dispatchUploadFunctions(functions);
+    dispatchUploadFunctionsSequential(functions);
   }
 
   private List<TdApi.Function<?>> getSendMusicFunctions (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
@@ -10280,34 +10280,65 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (uploadCount > 0) {
         UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
       }
-      dispatchUploadFunctions(functions);
+      dispatchUploadFunctionsSequential(functions);
     });
   }
 
   /**
-   * Sends every function in the list and, unlike a bare tdlib.client().send loop,
-   * also tells UploadNotificationManager about functions that fail at the RPC
-   * level (e.g. "Wrong file identifier"). Those never produce an
-   * UpdateMessageSendSucceeded/Failed event, since no message was ever created
-   * for them - without this, the batch counter can get permanently stuck below
-   * its expected total and the upload foreground service/notification never
-   * gets torn down until the unconditional idle timeout.
+   * Sends every function in the list strictly one at a time, in order, waiting
+   * for each result before dispatching the next. On a transient error (429,
+   * "Wrong file identifier", FILE_ID_INVALID, MEDIA_INVALID) the same item is
+   * retried up to 4 times with backoff, mirroring executeSendMessageFunctions().
+   * Unlike executeSendMessageFunctions() (built for a single composed message),
+   * this keeps going to the next item even after one item fails for good -
+   * losing one file out of a 10-item gallery batch should not also cost the
+   * other 9, which is what reusing executeSendMessageFunctions() here would do
+   * (it stops the whole chain on the first unretryable error).
    */
-  private void dispatchUploadFunctions (List<TdApi.Function<?>> functions) {
+  private void dispatchUploadFunctionsSequential (List<TdApi.Function<?>> functions) {
     if (functions == null || functions.isEmpty()) {
       return;
     }
+    final int total = functions.size();
+    final int[] retryCounts = new int[total];
     final Tdlib tdlibRef = tdlib;
-    for (TdApi.Function<?> function : functions) {
-      tdlibRef.client().send(function, result -> {
-        if (result != null && result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
-          TdApi.Error error = (TdApi.Error) result;
-          Log.i("TGX9_DISPATCH_ERROR: code=%d message=%s", error.code, error.message);
-          UploadNotificationManager.instance().onDispatchFailed(1, tdlibRef);
-        }
-        tdlibRef.messageHandler().onResult(result);
-      });
+    dispatchUploadFunctionAt(functions, 0, retryCounts, tdlibRef);
+  }
+
+  private void dispatchUploadFunctionAt (List<TdApi.Function<?>> functions, int index, int[] retryCounts, Tdlib tdlibRef) {
+    if (index >= functions.size()) {
+      return;
     }
+    tdlibRef.client().send(functions.get(index), result -> {
+      if (result != null && result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
+        TdApi.Error error = (TdApi.Error) result;
+        boolean retryable = error.code == 429 || (error.code == 400 && error.message != null &&
+          (error.message.contains("Wrong file identifier") || error.message.contains("wrong file identifier") ||
+           error.message.contains("FILE_ID_INVALID") || error.message.contains("MEDIA_INVALID")));
+        int retry = retryCounts[index]++;
+        if (retryable && retry < 4) {
+          int delaySeconds = 2;
+          if (error.code == 429 && error.message != null) {
+            try {
+              java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("retry after (\\d+)").matcher(error.message.toLowerCase());
+              if (matcher.find()) {
+                delaySeconds = Math.min(120, Math.max(1, Integer.parseInt(matcher.group(1))));
+              }
+            } catch (Throwable ignored) { }
+          }
+          long delayMs = (delaySeconds + retry) * 1000L;
+          Log.i("TGX9_DISPATCH_RETRY: index=%d/%d code=%d retry=%d delayMs=%d message=%s", index, functions.size(), error.code, retry, delayMs, error.message);
+          UI.post(() -> dispatchUploadFunctionAt(functions, index, retryCounts, tdlibRef), delayMs);
+          return;
+        }
+        Log.i("TGX9_DISPATCH_ERROR: index=%d/%d code=%d message=%s (giving up on this item, continuing batch)", index, functions.size(), error.code, error.message);
+        UploadNotificationManager.instance().onDispatchFailed(1, tdlibRef);
+        dispatchUploadFunctionAt(functions, index + 1, retryCounts, tdlibRef);
+        return;
+      }
+      tdlibRef.messageHandler().onResult(result);
+      dispatchUploadFunctionAt(functions, index + 1, retryCounts, tdlibRef);
+    });
   }
 
   private void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions, RunnableData<List<TdApi.Function<?>>> onReadyToSend) {
@@ -10672,13 +10703,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
       TdApi.InputMessageContent[] contentForFunctions = needGroupMedia ? moveNonMediaAfterMedia(inputContent) : inputContent;
       List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, contentForFunctions, needGroupMedia);
       Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b metadataMs=%d prepMs=%d functions=%d reordered=%b", files.length, asFiles, needGroupMedia, metadataMs, SystemClock.uptimeMillis() - preparationStartedAt, functions.size(), contentForFunctions != inputContent);
+      // Dispatch strictly in order, one function at a time (dispatchUploadFunctionsSequential).
+      // Firing every function at once (the original behavior) let TDLib respond
+      // out of submission order, and gave a transient "Wrong file identifier"
+      // error no chance to be retried, so that item was just dropped. This
+      // sends the next function only after the previous one resolves, retries
+      // Wrong file identifier / FILE_ID_INVALID / MEDIA_INVALID / 429 up to 4
+      // times, and - unlike executeSendMessageFunctions() - still moves on to
+      // the rest of the batch even if one specific item fails for good.
       int uploadCount = UploadNotificationManager.countUploadItems(functions);
       if (uploadCount > 0) {
         UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
       }
       long dispatchStartedAt = SystemClock.uptimeMillis();
-      dispatchUploadFunctions(functions);
-      Log.i("TGX9_SEND_MEDIA_DISPATCH: count=%d asFiles=%b functions=%d dispatchMs=%d", files.length, asFiles, functions.size(), SystemClock.uptimeMillis() - dispatchStartedAt);
+      dispatchUploadFunctionsSequential(functions);
+      Log.i("TGX9_SEND_MEDIA_DISPATCH: count=%d asFiles=%b functions=%d dispatchStartMs=%d", files.length, asFiles, functions.size(), SystemClock.uptimeMillis() - dispatchStartedAt);
     });
 
     return true;
