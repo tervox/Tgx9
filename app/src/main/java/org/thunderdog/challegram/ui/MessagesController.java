@@ -203,6 +203,7 @@ import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
+import org.thunderdog.challegram.telegram.Tgx9Diag;
 import org.thunderdog.challegram.telegram.UploadNotificationManager;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.ColorState;
@@ -10327,11 +10328,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
             } catch (Throwable ignored) { }
           }
           long delayMs = (delaySeconds + retry) * 1000L;
-          Log.i("TGX9_DISPATCH_RETRY: index=%d/%d code=%d retry=%d delayMs=%d message=%s", index, functions.size(), error.code, retry, delayMs, error.message);
+          Tgx9Diag.log("TGX9_DISPATCH_RETRY: index=%d/%d code=%d retry=%d delayMs=%d message=%s", index, functions.size(), error.code, retry, delayMs, error.message);
           UI.post(() -> dispatchUploadFunctionAt(functions, index, retryCounts, tdlibRef), delayMs);
           return;
         }
-        Log.i("TGX9_DISPATCH_ERROR: index=%d/%d code=%d message=%s (giving up on this item, continuing batch)", index, functions.size(), error.code, error.message);
+        Tgx9Diag.log("TGX9_DISPATCH_ERROR: index=%d/%d code=%d message=%s (giving up on this item, continuing batch)", index, functions.size(), error.code, error.message);
         UploadNotificationManager.instance().onDispatchFailed(1, tdlibRef);
         dispatchUploadFunctionAt(functions, index + 1, retryCounts, tdlibRef);
         return;
@@ -10702,7 +10703,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       TdApi.InputMessageContent[] contentForFunctions = needGroupMedia ? moveNonMediaAfterMedia(inputContent) : inputContent;
       List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, contentForFunctions, needGroupMedia);
-      Log.i("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b metadataMs=%d prepMs=%d functions=%d reordered=%b", files.length, asFiles, needGroupMedia, metadataMs, SystemClock.uptimeMillis() - preparationStartedAt, functions.size(), contentForFunctions != inputContent);
+      Tgx9Diag.log("TGX9_SEND_MEDIA_PREP: count=%d asFiles=%b grouped=%b metadataMs=%d prepMs=%d functions=%d reordered=%b", files.length, asFiles, needGroupMedia, metadataMs, SystemClock.uptimeMillis() - preparationStartedAt, functions.size(), contentForFunctions != inputContent);
       // Dispatch strictly in order, one function at a time (dispatchUploadFunctionsSequential).
       // Firing every function at once (the original behavior) let TDLib respond
       // out of submission order, and gave a transient "Wrong file identifier"
@@ -10717,7 +10718,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       long dispatchStartedAt = SystemClock.uptimeMillis();
       dispatchUploadFunctionsSequential(functions);
-      Log.i("TGX9_SEND_MEDIA_DISPATCH: count=%d asFiles=%b functions=%d dispatchStartMs=%d", files.length, asFiles, functions.size(), SystemClock.uptimeMillis() - dispatchStartedAt);
+      Tgx9Diag.log("TGX9_SEND_MEDIA_DISPATCH: count=%d asFiles=%b functions=%d dispatchStartMs=%d", files.length, asFiles, functions.size(), SystemClock.uptimeMillis() - dispatchStartedAt);
     });
 
     return true;

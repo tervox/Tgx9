@@ -43,7 +43,7 @@ public final class UploadNotificationManager {
   private static final long REFRESH_INTERVAL_MS = 350;
   private static final long FINISH_DELAY_MS = 900;
   private static final long FALLBACK_SUPPRESS_AFTER_FINISH_MS = 15000;
-  private static final long MAX_IDLE_WAIT_MS = 120000;
+  private static final long MAX_IDLE_WAIT_MS = 20000;
   private static final long NETWORK_RECOVERY_INTERVAL_MS = 8000;
 
   private static UploadNotificationManager instance;
@@ -462,7 +462,7 @@ public final class UploadNotificationManager {
   }
 
   private void notifyProgress (Context context, NotificationManager manager, String title, String text, int progress) {
-    manager.notify(NOTIFICATION_ID, buildNotification(context, title, text, android.R.drawable.stat_sys_upload, true, 100, progress));
+    manager.notify(NOTIFICATION_ID, buildNotification(context, title, text, android.R.drawable.stat_sys_upload, true, false, 100, progress));
   }
 
   private void scheduleFinishLocked (Context context) {
@@ -480,6 +480,8 @@ public final class UploadNotificationManager {
     Tdlib tdlib;
     synchronized (lock) {
       if (!sessionActive || completedCount < expectedCount || (!messageCompletionMode && !activeFiles.isEmpty())) {
+        Tgx9Diag.log("TGX9_FINISH_BLOCKED: sessionActive=%b completedCount=%d expectedCount=%d messageCompletionMode=%b activeFiles=%d",
+          sessionActive, completedCount, expectedCount, messageCompletionMode, activeFiles.size());
         return;
       }
       completed = completedCount;
@@ -510,7 +512,7 @@ public final class UploadNotificationManager {
     long totalElapsed = startedAt > 0 ? Math.max(1L, now - startedAt) : 0L;
     long transferElapsed = transferStartedAt > 0 ? Math.max(1L, now - transferStartedAt) : totalElapsed;
     long averageBytesPerSecond = transferElapsed > 0 ? (uploadedBytes * 1000L) / transferElapsed : 0L;
-    Log.i("TGX9_UPLOAD_METRICS: files=%d completed=%d bytes=%d totalMs=%d transferMs=%d avgBytesPerSec=%d", total, completed, uploadedBytes, totalElapsed, transferElapsed, averageBytesPerSecond);
+    Tgx9Diag.log("TGX9_UPLOAD_METRICS: files=%d completed=%d bytes=%d totalMs=%d transferMs=%d avgBytesPerSec=%d", total, completed, uploadedBytes, totalElapsed, transferElapsed, averageBytesPerSecond);
     stopUploadService(context, true);
     showDoneNotification(context, completed);
     if (tdlib != null) {
@@ -589,7 +591,7 @@ public final class UploadNotificationManager {
     manager.notify(NOTIFICATION_ID, buildNotification(context,
       context.getString(R.string.UploadNotificationDone),
       context.getString(R.string.UploadNotificationDoneText, completed),
-      android.R.drawable.stat_sys_upload_done, false, 0, 0));
+      android.R.drawable.stat_sys_upload_done, false, false, 0, 0));
   }
 
   private void ensureChannel (Context context) {
@@ -606,7 +608,7 @@ public final class UploadNotificationManager {
     }
   }
 
-  private Notification buildNotification (Context context, String title, String text, int icon, boolean ongoing, int max, int progress) {
+  private Notification buildNotification (Context context, String title, String text, int icon, boolean ongoing, boolean autoCancel, int max, int progress) {
     ensureChannel(context);
     Intent openIntent = new Intent(context, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
     int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT : PendingIntent.FLAG_UPDATE_CURRENT;
@@ -618,7 +620,7 @@ public final class UploadNotificationManager {
       .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
       .setOngoing(ongoing)
       .setOnlyAlertOnce(true)
-      .setAutoCancel(!ongoing)
+      .setAutoCancel(autoCancel)
       .setContentIntent(pendingIntent)
       .setCategory(NotificationCompat.CATEGORY_PROGRESS)
       .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -646,7 +648,25 @@ public final class UploadNotificationManager {
 
   private void stopUploadService (Context context, boolean completed) {
     try {
-      context.stopService(new Intent(context, UploadService.class));
+      if (completed) {
+        // A foreground service's notification is tied to its foreground
+        // state: when stopService() tears it down, Android's own internal
+        // stopForeground(REMOVE) equivalent fires and removes whatever
+        // notification currently has NOTIFICATION_ID - including the "done"
+        // notification showDoneNotification() posts right after this call
+        // returns. It shows for a frame, if that, then disappears. Detaching
+        // the notification from the service first (ACTION_DETACH_AND_STOP)
+        // lets it survive as a normal notification once showDoneNotification()
+        // updates its content.
+        Intent detachIntent = new Intent(context, UploadService.class).setAction(UploadService.ACTION_DETACH_AND_STOP);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          context.startForegroundService(detachIntent);
+        } else {
+          context.startService(detachIntent);
+        }
+      } else {
+        context.stopService(new Intent(context, UploadService.class));
+      }
     } catch (Throwable ignored) { }
     releaseWakeLock();
     NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -684,6 +704,7 @@ public final class UploadNotificationManager {
   }
 
   public static class UploadService extends Service {
+    public static final String ACTION_DETACH_AND_STOP = "org.thunderdog.challegram.UPLOAD_DETACH_AND_STOP";
     public static volatile boolean running;
 
     @Override
@@ -696,7 +717,7 @@ public final class UploadNotificationManager {
         Notification notification = instance().buildNotification(context,
           context.getString(R.string.UploadNotificationTitle),
           context.getString(R.string.UploadNotificationPreparing, 0),
-          android.R.drawable.stat_sys_upload, true, 100, 0);
+          android.R.drawable.stat_sys_upload, true, false, 100, 0);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
           startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } else {
@@ -711,6 +732,23 @@ public final class UploadNotificationManager {
 
     @Override
     public int onStartCommand (Intent intent, int flags, int startId) {
+      if (intent != null && ACTION_DETACH_AND_STOP.equals(intent.getAction())) {
+        // Keep the current notification (by now showDoneNotification() has
+        // usually already updated it to the "done" content, but detach first
+        // regardless of ordering - see stopUploadService()) and only detach
+        // it from this service's foreground state, instead of removing it.
+        try {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(Service.STOP_FOREGROUND_DETACH);
+          } else {
+            stopForeground(false);
+          }
+        } catch (Throwable t) {
+          Log.e("UploadService detach failed", t);
+        }
+        stopSelfResult(startId);
+        return START_NOT_STICKY;
+      }
       if (!instance().hasActiveSession()) {
         stopSelfResult(startId);
         return START_NOT_STICKY;
