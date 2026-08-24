@@ -47,6 +47,8 @@ jobs:
              tgx/app/src/main/java/org/thunderdog/challegram/ui/
           cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/component/attach/MediaLayout.java \
              tgx/app/src/main/java/org/thunderdog/challegram/component/attach/
+          cp tgx9-mods/app/src/main/java/org/thunderdog/challegram/telegram/Tgx9Diag.java \
+             tgx/app/src/main/java/org/thunderdog/challegram/telegram/
           # Fix tgcalls libs
           sed -i '2a set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/../tgcalls)' \
              tgx/app/jni/tgvoip/CMakeLists.txt
