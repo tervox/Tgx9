@@ -650,19 +650,24 @@ public final class UploadNotificationManager {
     try {
       if (completed) {
         // A foreground service's notification is tied to its foreground
-        // state: when stopService() tears it down, Android's own internal
+        // state: when the service is stopped, Android's own internal
         // stopForeground(REMOVE) equivalent fires and removes whatever
         // notification currently has NOTIFICATION_ID - including the "done"
         // notification showDoneNotification() posts right after this call
         // returns. It shows for a frame, if that, then disappears. Detaching
-        // the notification from the service first (ACTION_DETACH_AND_STOP)
-        // lets it survive as a normal notification once showDoneNotification()
-        // updates its content.
-        Intent detachIntent = new Intent(context, UploadService.class).setAction(UploadService.ACTION_DETACH_AND_STOP);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          context.startForegroundService(detachIntent);
+        // the notification from the service first lets it survive as a
+        // normal notification once showDoneNotification() updates its
+        // content. This calls the already-running instance directly rather
+        // than relaying an Intent through startForegroundService(), which
+        // Android 12+ can silently refuse when the app isn't currently in
+        // the foreground (the common case for a long upload finishing) -
+        // leaving the service running forever with no error and no crash.
+        UploadService activeService = UploadService.activeInstance;
+        if (activeService != null) {
+          activeService.detachAndStop();
         } else {
-          context.startService(detachIntent);
+          // Service already gone for some other reason; nothing to detach.
+          context.stopService(new Intent(context, UploadService.class));
         }
       } else {
         context.stopService(new Intent(context, UploadService.class));
@@ -704,13 +709,21 @@ public final class UploadNotificationManager {
   }
 
   public static class UploadService extends Service {
-    public static final String ACTION_DETACH_AND_STOP = "org.thunderdog.challegram.UPLOAD_DETACH_AND_STOP";
     public static volatile boolean running;
+    // Direct in-process reference instead of relaying a stop/detach signal
+    // through an Intent. startForegroundService() (used previously here) can
+    // be silently blocked by Android 12+'s background-start restrictions
+    // when the app isn't in the foreground at the moment a batch finishes -
+    // which is the common case for a long upload - leaving the service
+    // running forever with no error. A direct method call on the already-
+    // running instance has no such restriction.
+    private static volatile UploadService activeInstance;
 
     @Override
     public void onCreate () {
       super.onCreate();
       running = true;
+      activeInstance = this;
       try {
         Context context = getApplicationContext();
         instance().ensureChannel(context);
@@ -730,13 +743,16 @@ public final class UploadNotificationManager {
       }
     }
 
-    @Override
-    public int onStartCommand (Intent intent, int flags, int startId) {
-      if (intent != null && ACTION_DETACH_AND_STOP.equals(intent.getAction())) {
-        // Keep the current notification (by now showDoneNotification() has
-        // usually already updated it to the "done" content, but detach first
-        // regardless of ordering - see stopUploadService()) and only detach
-        // it from this service's foreground state, instead of removing it.
+    /**
+     * Detaches the notification from this service's foreground state (so
+     * stopping the service does not also take the notification down with
+     * it - see stopUploadService()) and stops the service. Safe to call from
+     * any thread; hops to the main thread since Service/Notification APIs
+     * expect that.
+     */
+    void detachAndStop () {
+      Handler mainHandler = new Handler(Looper.getMainLooper());
+      Runnable action = () -> {
         try {
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(Service.STOP_FOREGROUND_DETACH);
@@ -746,9 +762,27 @@ public final class UploadNotificationManager {
         } catch (Throwable t) {
           Log.e("UploadService detach failed", t);
         }
-        stopSelfResult(startId);
-        return START_NOT_STICKY;
+        stopSelf();
+      };
+      if (Looper.myLooper() == Looper.getMainLooper()) {
+        action.run();
+      } else {
+        mainHandler.post(action);
       }
+    }
+
+    @Override
+    public void onDestroy () {
+      super.onDestroy();
+      running = false;
+      if (activeInstance == this) {
+        activeInstance = null;
+      }
+      instance().releaseWakeLock();
+    }
+
+    @Override
+    public int onStartCommand (Intent intent, int flags, int startId) {
       if (!instance().hasActiveSession()) {
         stopSelfResult(startId);
         return START_NOT_STICKY;
@@ -762,13 +796,6 @@ public final class UploadNotificationManager {
     public void onTaskRemoved (Intent rootIntent) {
       // Do not stop the service when the task is swiped away.
       super.onTaskRemoved(rootIntent);
-    }
-
-    @Override
-    public void onDestroy () {
-      running = false;
-      instance().releaseWakeLock();
-      super.onDestroy();
     }
 
     @Override
