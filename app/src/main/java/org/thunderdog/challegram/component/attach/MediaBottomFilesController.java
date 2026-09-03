@@ -1328,7 +1328,15 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       if (item.getViewType() == ListItem.TYPE_CUSTOM_INLINE && (item.getId() == R.id.btn_file || item.getId() == R.id.btn_music)) {
         InlineResult<?> result = (InlineResult<?>) item.getData();
         if (result != null) {
-          selectItem(item, result);
+          // If something is already selected, long-pressing a second, not-yet-
+          // selected item selects every file in between too (same idea as
+          // shift-click / drag-select in a desktop file manager), instead of
+          // only toggling the one item held down.
+          if (inFileSelectMode && selectedItems != null && !selectedItems.isEmpty() && !selectedItems.contains(result)) {
+            selectRange(item, result);
+          } else {
+            selectItem(item, result);
+          }
           return true;
         }
       }
@@ -1349,6 +1357,43 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         adapter.clearSelectedItems();
       }
     }
+  }
+
+  // Selects every selectable file/music item between the most recently
+  // selected item and targetItem (inclusive on both ends), skipping anything
+  // already selected. Mirrors selectItem()'s "add" branch for each one, so
+  // numbering and adapter state stay consistent with a normal tap-selection.
+  private void selectRange (ListItem targetItem, InlineResult<?> targetResult) {
+    InlineResult<?> anchorResult = selectedItems.get(selectedItems.size() - 1);
+    int anchorPos = adapter.indexOfViewByData(anchorResult);
+    int targetPos = adapter.indexOfViewByData(targetResult);
+    if (anchorPos == -1 || targetPos == -1 || anchorPos == targetPos) {
+      selectItem(targetItem, targetResult);
+      return;
+    }
+    int from = Math.min(anchorPos, targetPos);
+    int to = Math.max(anchorPos, targetPos);
+    List<ListItem> items = adapter.getItems();
+    for (int i = from; i <= to; i++) {
+      ListItem listItem = items.get(i);
+      if (listItem.getViewType() != ListItem.TYPE_CUSTOM_INLINE) {
+        continue;
+      }
+      int itemId = listItem.getId();
+      if (itemId != R.id.btn_file && itemId != R.id.btn_music) {
+        continue;
+      }
+      InlineResult<?> result = (InlineResult<?>) listItem.getData();
+      if (result == null || selectedItems.contains(result)) {
+        continue;
+      }
+      int selectionIndex = selectedItems.size();
+      selectedItems.add(result);
+      listItem.setSelected(true, selectionIndex);
+      adapter.setIsSelected(i, true, selectionIndex);
+    }
+    setInFileSelectMode(!selectedItems.isEmpty());
+    mediaLayout.setCounter(selectedItems.size());
   }
 
   private void selectItem (ListItem item, InlineResult<?> inlineResult) {

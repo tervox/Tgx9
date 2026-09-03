@@ -10365,17 +10365,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
     Media.instance().post(() -> {
       final long preparationStartedAt = SystemClock.uptimeMillis();
       // Phase 1: figure out which paths are video, and for those, read their
-      // metadata (MediaMetadataRetriever) in parallel. Previously this ran
-      // serially inside the loop below, one file at a time - meaning file #10
-      // couldn't even be dispatched until files #1-9 had each been scanned in
-      // turn on this single Media thread. See sendPhotosAndVideosCompressed()
-      // for the same pattern.
+      // metadata (MediaMetadataRetriever). This used to run several files
+      // concurrently to shorten this phase, but on weaker hardware with a
+      // single hardware video decoder, opening several MediaMetadataRetriever
+      // instances at once can contend for that same decoder and stall the
+      // whole device rather than speed anything up. Kept sequential
+      // (poolSize=1) for safety. See sendPhotosAndVideosCompressed() for the
+      // same change.
       final int count = paths.size();
       final boolean[] isVideo = new boolean[count];
       final VideoMetadata[] videoMetadata = new VideoMetadata[count];
       final TD.FileInfo[] infos = new TD.FileInfo[count];
       final long metadataStartedAt = SystemClock.uptimeMillis();
-      int poolSize = Math.max(1, Math.min(3, Math.min(count, Runtime.getRuntime().availableProcessors())));
+      int poolSize = 1;
       ExecutorService metadataExecutor = Executors.newFixedThreadPool(poolSize);
       CountDownLatch metadataLatch = new CountDownLatch(count);
       for (int a = 0; a < count; a++) {
@@ -10639,15 +10641,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
       final boolean[] sendAsAnimationFlags = new boolean[files.length];
 
       // Phase 1: metadata scan. MediaMetadataRetriever.extractMetadata() is the
-      // slow, blocking step here, and previously ran once per file, one file at
-      // a time, on this single Media thread - so file #10 could not even begin
-      // reaching TDLib until files #1-9 had each been scanned in turn. Each
-      // ImageGalleryFile is independent (its own path, its own retriever
-      // instance), so this part is safe to run concurrently; the TDLib-facing
-      // filegen().createThumbnail() calls below stay untouched and strictly
-      // serial, in original order, exactly as before.
+      // slow, blocking step here. This used to run several files concurrently
+      // (poolSize up to 3) to shorten this phase, but on weaker hardware with
+      // a single hardware video decoder, opening several MediaMetadataRetriever
+      // instances at once can contend for that same decoder and stall the
+      // whole device rather than speed anything up. Kept sequential
+      // (poolSize=1) for safety; the phase separation stays so metadataMs is
+      // still visible in the log even though this now behaves like a plain
+      // serial loop.
       final long metadataStartedAt = SystemClock.uptimeMillis();
-      int poolSize = Math.max(1, Math.min(3, Math.min(files.length, Runtime.getRuntime().availableProcessors())));
+      int poolSize = 1;
       ExecutorService metadataExecutor = Executors.newFixedThreadPool(poolSize);
       CountDownLatch metadataLatch = new CountDownLatch(files.length);
       for (int a = 0; a < files.length; a++) {
