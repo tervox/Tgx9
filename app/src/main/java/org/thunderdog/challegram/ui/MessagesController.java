@@ -10363,21 +10363,61 @@ public class MessagesController extends ViewController<MessagesController.Argume
     boolean allowVideos = tdlib.getRestrictionStatus(chat, RightId.SEND_VIDEOS) == null;
     boolean allowGifs = tdlib.getRestrictionStatus(chat, RightId.SEND_OTHER_MESSAGES) == null;
     Media.instance().post(() -> {
+      final long preparationStartedAt = SystemClock.uptimeMillis();
+      // Phase 1: figure out which paths are video, and for those, read their
+      // metadata (MediaMetadataRetriever) in parallel. Previously this ran
+      // serially inside the loop below, one file at a time - meaning file #10
+      // couldn't even be dispatched until files #1-9 had each been scanned in
+      // turn on this single Media thread. See sendPhotosAndVideosCompressed()
+      // for the same pattern.
+      final int count = paths.size();
+      final boolean[] isVideo = new boolean[count];
+      final VideoMetadata[] videoMetadata = new VideoMetadata[count];
+      final TD.FileInfo[] infos = new TD.FileInfo[count];
+      final long metadataStartedAt = SystemClock.uptimeMillis();
+      int poolSize = Math.max(1, Math.min(3, Math.min(count, Runtime.getRuntime().availableProcessors())));
+      ExecutorService metadataExecutor = Executors.newFixedThreadPool(poolSize);
+      CountDownLatch metadataLatch = new CountDownLatch(count);
+      for (int a = 0; a < count; a++) {
+        final int index = a;
+        metadataExecutor.execute(() -> {
+          try {
+            String path = paths.get(index);
+            TD.FileInfo info = new TD.FileInfo();
+            TD.createInputFile(path, null, info); // populates info as a side effect; input file itself is rebuilt below
+            infos[index] = info;
+            if (allowVideos && isVideoPath(path, info)) {
+              isVideo[index] = true;
+              videoMetadata[index] = extractVideoMetadata(path);
+            }
+          } finally {
+            metadataLatch.countDown();
+          }
+        });
+      }
+      try {
+        metadataLatch.await();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      metadataExecutor.shutdown();
+      final long metadataMs = SystemClock.uptimeMillis() - metadataStartedAt;
+
       boolean restrictionFailed = false;
       List<TdApi.InputMessageContent> content = new ArrayList<>();
-      for (int a = 0; a < paths.size(); a++) {
+      for (int a = 0; a < count; a++) {
         final String path = paths.get(a);
-        final boolean isLast = a == paths.size() - 1;
+        final boolean isLast = a == count - 1;
         final TdApi.FormattedText caption = isLast ? lastFileCaption : null;
         final boolean showCaptionAboveMedia = false; // FIXME: showCaptionAboveMedia
-        TD.FileInfo info = new TD.FileInfo();
+        TD.FileInfo info = infos[a] != null ? infos[a] : new TD.FileInfo();
         TdApi.InputFile inputFile = TD.createInputFile(path, null, info);
         // In a grouped file selection, silent videos must remain videos. Otherwise
         // TD.toInputMessageContent classifies short, audio-less videos as Animation,
         // which forces TD.toFunctions to split the album into small messages.
         TdApi.InputMessageContent inputMessageContent;
-        if (allowVideos && isVideoPath(path, info)) {
-          inputMessageContent = createVideoContentForPath(path, inputFile, caption, showCaptionAboveMedia, false, isSecretChat);
+        if (isVideo[a]) {
+          inputMessageContent = createVideoContentForPath(inputFile, caption, showCaptionAboveMedia, false, isSecretChat, videoMetadata[a]);
         } else {
           boolean allowAnimation = allowGifs && !needGroupMedia;
           inputMessageContent = TD.toInputMessageContent(path, inputFile, info, caption, showCaptionAboveMedia, allowAudio, allowAnimation, allowVideos, allowDocs, false);
@@ -10405,6 +10445,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         contentForFunctions = moveNonMediaAfterMedia(contentForFunctions);
       }
       List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, contentForFunctions, needGroupMedia);
+      Tgx9Diag.log("TGX9_SEND_FILES_PREP: count=%d metadataMs=%d prepMs=%d functions=%d", count, metadataMs, SystemClock.uptimeMillis() - preparationStartedAt, functions.size());
       UI.post(() -> onReadyToSend.runWithData(functions));
     });
   }
@@ -10502,7 +10543,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
       lowerName.endsWith(".m2ts") || lowerName.endsWith(".flv");
   }
 
-  private TdApi.InputMessageContent createVideoContentForPath (String path, TdApi.InputFile inputFile, @Nullable TdApi.FormattedText caption, boolean showCaptionAboveMedia, boolean hasSpoiler, boolean isSecretChat) {
+  private static final class VideoMetadata {
+    final int width, height, durationSeconds;
+    VideoMetadata (int width, int height, int durationSeconds) {
+      this.width = width;
+      this.height = height;
+      this.durationSeconds = durationSeconds;
+    }
+  }
+
+  // Split out from createVideoContentForPath so the slow part (opening a
+  // MediaMetadataRetriever per file) can run in parallel across several
+  // files instead of one at a time - see the metadataExecutor use in
+  // sendFiles(). This part touches only standard Android APIs, no TDLib
+  // calls, so it is safe to run off the Media thread and concurrently.
+  private static VideoMetadata extractVideoMetadata (String path) {
     int width = 1;
     int height = 1;
     int durationSeconds = 0;
@@ -10524,7 +10579,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } finally {
       U.closeRetriever(retriever);
     }
-    return tdlib.filegen().createThumbnail(new TdApi.InputMessageVideo(inputFile, null, null, 0, null, durationSeconds, width, height, U.canStreamVideo(inputFile), caption, showCaptionAboveMedia, null, hasSpoiler), isSecretChat);
+    return new VideoMetadata(width, height, durationSeconds);
+  }
+
+  private TdApi.InputMessageContent createVideoContentForPath (TdApi.InputFile inputFile, @Nullable TdApi.FormattedText caption, boolean showCaptionAboveMedia, boolean hasSpoiler, boolean isSecretChat, VideoMetadata metadata) {
+    return tdlib.filegen().createThumbnail(new TdApi.InputMessageVideo(inputFile, null, null, 0, null, metadata.durationSeconds, metadata.width, metadata.height, U.canStreamVideo(inputFile), caption, showCaptionAboveMedia, null, hasSpoiler), isSecretChat);
   }
 
   private static TdApi.InputMessageContent[] moveNonMediaAfterMedia (TdApi.InputMessageContent[] content) {
