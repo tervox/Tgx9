@@ -75,6 +75,7 @@ public final class UploadNotificationManager {
   private long suppressFallbackUntil;
   private long lastEventUptime;
   private long lastRefreshUptime;
+  private long lastIdleScheduleUptime;
   private boolean refreshPosted;
   private Runnable finishRunnable;
   private Runnable idleRunnable;
@@ -521,6 +522,16 @@ public final class UploadNotificationManager {
   }
 
   private void scheduleIdleCheckLocked (Context context) {
+    // The idle window is 20s wide; rescheduling this on literally every
+    // upload progress tick (which can fire many times per second) buys no
+    // real precision and, at that frequency, adds needless Handler churn and
+    // allocation on the main thread - see startUploadService() for the more
+    // significant version of the same kind of problem.
+    long now = SystemClock.uptimeMillis();
+    if (idleRunnable != null && now - lastIdleScheduleUptime < 1000) {
+      return;
+    }
+    lastIdleScheduleUptime = now;
     cancelIdleLocked();
     idleRunnable = () -> {
       synchronized (lock) {
@@ -632,6 +643,18 @@ public final class UploadNotificationManager {
   }
 
   private void startUploadService (Context context) {
+    if (UploadService.running) {
+      // postNotificationUpdate() runs this on every single TDLib upload
+      // progress tick (onFileUpdate), which for an active upload can fire
+      // many times per second. Without this guard, every one of those calls
+      // reached all the way down to a real startForegroundService()/
+      // startService() IPC call to the system, even though the service was
+      // already running - on a slow device that is enough IPC traffic on the
+      // main thread to make the whole UI feel frozen (without a classic ANR,
+      // since it is many small calls rather than one long block) until the
+      // flood of progress events stops.
+      return;
+    }
     ensureChannel(context);
     try {
       Intent intent = new Intent(context, UploadService.class);
