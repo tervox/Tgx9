@@ -2011,6 +2011,14 @@ public class MediaLayout extends FrameLayoutFix implements
             hide(false);
           }
         }
+
+        @Override
+        public void onGifFilesSelected (View view, ArrayList<String> paths) {
+          if (target != null && target.isFocused()) {
+            hide(false);
+            target.sendFilesAsGif(view, paths, Td.newSendOptions());
+          }
+        }
       };
     }
 

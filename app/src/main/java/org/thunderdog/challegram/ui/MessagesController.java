@@ -10272,6 +10272,54 @@ public class MessagesController extends ViewController<MessagesController.Argume
     sendFiles(view, paths, needGroupMedia, allowReply, null, initialSendOptions);
   }
 
+  /**
+   * Sends every path as TdApi.InputMessageAnimation - Telegram's actual "GIF"
+   * content type (autoplay, loop, no video controls) - unconditionally, with
+   * no size/duration guard and no video/document/animation auto-detection.
+   * This is the explicit "send as GIF" picker entry: unlike the normal
+   * sendFiles()/sendPhotosAndVideosCompressed() paths, the person chose this
+   * mode specifically, so their choice is not second-guessed here.
+   */
+  public void sendFilesAsGif (View view, final List<String> paths, TdApi.MessageSendOptions initialSendOptions) {
+    if (paths == null || paths.isEmpty()) {
+      return;
+    }
+    if (showSlowModeRestriction(view, initialSendOptions)) {
+      return;
+    }
+
+    final long chatId = chat.id;
+    final boolean isSecretChat = isSecretChat();
+    ReplyInfo replyInfo = obtainReplyTo();
+    TdApi.InputMessageReplyTo replyTo = replyInfo != null ? replyInfo.toInputMessageReply() : null;
+    TdApi.MessageTopic topicId = getMessageTopicId(replyInfo);
+    final TdApi.MessageSendOptions finalSendOptions = Td.newSendOptions(
+      initialSendOptions,
+      getInputSuggestedPostInfo(replyInfo),
+      obtainSilentMode()
+    );
+
+    Media.instance().post(() -> {
+      final long preparationStartedAt = SystemClock.uptimeMillis();
+      final int count = paths.size();
+      List<TdApi.InputMessageContent> content = new ArrayList<>(count);
+      for (int a = 0; a < count; a++) {
+        final String path = paths.get(a);
+        VideoMetadata metadata = extractVideoMetadata(path);
+        TD.FileInfo info = new TD.FileInfo();
+        TdApi.InputFile inputFile = TD.createInputFile(path, null, info);
+        content.add(tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputFile, null, null, metadata.durationSeconds, Math.max(1, metadata.width), Math.max(1, metadata.height), null, false, false), isSecretChat));
+      }
+      List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, content.toArray(new TdApi.InputMessageContent[0]), false);
+      Tgx9Diag.log("TGX9_SEND_AS_GIF: count=%d prepMs=%d functions=%d", count, SystemClock.uptimeMillis() - preparationStartedAt, functions.size());
+      int uploadCount = UploadNotificationManager.countUploadItems(functions);
+      if (uploadCount > 0) {
+        UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
+      }
+      dispatchUploadFunctionsSequential(functions);
+    });
+  }
+
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
     sendFiles(view, paths, needGroupMedia, allowReply, lastFileCaption, initialSendOptions, functions -> {
       if (functions == null) {
@@ -10418,7 +10466,17 @@ public class MessagesController extends ViewController<MessagesController.Argume
         // TD.toInputMessageContent classifies short, audio-less videos as Animation,
         // which forces TD.toFunctions to split the album into small messages.
         TdApi.InputMessageContent inputMessageContent;
-        if (isVideo[a]) {
+        if (isVideo[a] && isWebmAnimationCandidate(path, infos[a], videoMetadata[a])) {
+          // .webm was always forced through createVideoContentForPath() below
+          // (a plain InputMessageVideo) regardless of content - the common
+          // short, silent, looping clips people call "gifs" need
+          // InputMessageAnimation instead to actually behave like a GIF
+          // (autoplay/loop, no video controls). Same size/duration limits as
+          // Telegram's own GIF handling, mirrored from
+          // sendPhotosAndVideosCompressed()'s isGifOrWebmFile() check.
+          VideoMetadata metadata = videoMetadata[a];
+          inputMessageContent = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputFile, null, null, metadata.durationSeconds, Math.max(1, metadata.width), Math.max(1, metadata.height), caption, showCaptionAboveMedia, false), isSecretChat);
+        } else if (isVideo[a]) {
           inputMessageContent = createVideoContentForPath(inputFile, caption, showCaptionAboveMedia, false, isSecretChat, videoMetadata[a]);
         } else {
           boolean allowAnimation = allowGifs && !needGroupMedia;
@@ -10500,15 +10558,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
-  private static boolean isGifFile (ImageGalleryFile file) {
+  // "GIF format" in Telegram means TdApi.InputMessageAnimation - autoplay,
+  // looping, no video controls - regardless of whether the underlying file is
+  // an actual .gif or a .webm (the common container for short looping clips
+  // downloaded as "gifs" from most sites/apps). Below a small file-size/
+  // duration guard, matching Telegram's own limits for GIF-style playback.
+  private static boolean isGifOrWebmFile (ImageGalleryFile file) {
     if (file == null) {
       return false;
     }
-    if ("image/gif".equalsIgnoreCase(file.getVideoMimeType())) {
+    String mimeType = file.getVideoMimeType();
+    if ("image/gif".equalsIgnoreCase(mimeType) || "video/webm".equalsIgnoreCase(mimeType)) {
       return true;
     }
     String path = file.getFilePath();
-    return path != null && path.length() >= 4 && path.regionMatches(true, path.length() - 4, ".gif", 0, 4);
+    if (path == null || path.length() < 4) {
+      return false;
+    }
+    return path.regionMatches(true, path.length() - 4, ".gif", 0, 4) ||
+      (path.length() >= 5 && path.regionMatches(true, path.length() - 5, ".webm", 0, 5));
   }
 
   private static boolean isVideoFile (ImageGalleryFile file) {
@@ -10543,6 +10611,26 @@ public class MessagesController extends ViewController<MessagesController.Argume
       lowerName.endsWith(".webm") || lowerName.endsWith(".avi") || lowerName.endsWith(".3gp") ||
       lowerName.endsWith(".m4v") || lowerName.endsWith(".ts") || lowerName.endsWith(".mts") ||
       lowerName.endsWith(".m2ts") || lowerName.endsWith(".flv");
+  }
+
+  // Same idea and limits as sendPhotosAndVideosCompressed()'s isGifOrWebmFile():
+  // a short, small .webm is what most sites/apps hand out as a "gif" these
+  // days, and should behave like one (autoplay/loop) instead of like a video.
+  private static boolean isWebmAnimationCandidate (String path, TD.FileInfo info, VideoMetadata metadata) {
+    if (path == null || metadata == null) {
+      return false;
+    }
+    String lowerPath = path.toLowerCase(java.util.Locale.US);
+    if (!lowerPath.endsWith(".webm")) {
+      return false;
+    }
+    long knownSize = info != null ? info.knownSize : 0;
+    if (knownSize <= 0 && !path.startsWith("content://")) {
+      try {
+        knownSize = new File(path).length();
+      } catch (Throwable ignored) { }
+    }
+    return metadata.durationSeconds > 0 && metadata.durationSeconds < 30 && knownSize > 0 && knownSize < 10L * 1024 * 1024;
   }
 
   private static final class VideoMetadata {
@@ -10726,7 +10814,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
             int safeWidth = Math.max(1, width);
             int safeHeight = Math.max(1, height);
             int durationSeconds = (int) Math.max(0L, duration / 1000L);
-            if (isGifFile(file) && duration > 0L && knownSize > 0L && duration < 30000L && knownSize < 10L * 1024L * 1024L) {
+            if (isGifOrWebmFile(file) && duration > 0L && knownSize > 0L && duration < 30000L && knownSize < 10L * 1024L * 1024L) {
               content = tdlib.filegen().createThumbnail(new TdApi.InputMessageAnimation(inputVideo, null, null, durationSeconds, safeWidth, safeHeight, caption, showCaptionAboveMedia, hasSpoiler), isSecretChat);
             } else {
               // An original-quality video must never fall back to InputMessageDocument

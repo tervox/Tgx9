@@ -224,6 +224,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private static final String KEY_FOLDER = "dir://";
   private static final String KEY_FILE = "file://";
   private static final String KEY_UPPER = "..";
+  private static final String KEY_GIF_MODE = "gif_mode";
 
     private int initialItemsCount;
 
@@ -270,6 +271,17 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private void navigateToPath (final View view, final String currentPath, final String parentPath, boolean isUpper, final InlineResultCommon data, Runnable onDone, Runnable onError) {
     cancelCurrentLoadOperation();
 
+    // Track "Enviar como GIF" mode: set on entering it, cleared on returning
+    // to the top-level menu or switching to a different top-level entry, left
+    // alone while browsing into KEY_FOLDER subfolders so it persists for as
+    // long as the person stays inside this mode.
+    if (currentPath == null || currentPath.isEmpty()
+      || KEY_GALLERY.equals(currentPath) || KEY_MUSIC.equals(currentPath) || KEY_DOWNLOADS.equals(currentPath)) {
+      forceGifMode = false;
+    } else if (KEY_GIF_MODE.equals(currentPath)) {
+      forceGifMode = true;
+    }
+
     ArrayList<ListItem> items = new ArrayList<>();
 
     if (currentPath != null && !currentPath.isEmpty()) {
@@ -289,6 +301,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         operation = buildDownloads();
       } else if (KEY_BUCKET.equals(currentPath)) {
         operation = buildBucket(data);
+      } else if (KEY_GIF_MODE.equals(currentPath)) {
+        // Same browsing as "Diretório Raiz" - the person just wants to pick
+        // any .gif/.webm from anywhere; the only difference is what happens
+        // when they actually pick a file (see onClick() / onMultiSendPress()).
+        operation = buildFolder("/", parentPath);
       } else if (currentPath.startsWith(KEY_FOLDER)) {
         String path = currentPath.substring(KEY_FOLDER.length());
         operation = buildFolder(path, parentPath);
@@ -346,6 +363,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
     InlineResultCommon musicItem = createItem(context, tdlib, KEY_MUSIC, R.drawable.baseline_music_note_24, Lang.getString(R.string.Music), Lang.getString(R.string.SendMusicHint));
     items.add(createItem(musicItem, R.id.btn_musicFiles));
+
+    InlineResultCommon gifModeItem = createItem(context, tdlib, KEY_GIF_MODE, R.drawable.deproko_baseline_gif_filled_24, "Enviar como GIF", "Enviar .gif/.webm sem compressão, como GIF");
+    items.add(createItem(gifModeItem, R.id.btn_folder));
 
     boolean addedDownloads = false;
     boolean downloadsEmpty = false;
@@ -1237,6 +1257,10 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       if (itemId == R.id.btn_file || itemId == R.id.btn_music) {
         if (inFileSelectMode) {
           selectItem(item, result);
+        } else if (forceGifMode && itemId == R.id.btn_file) {
+          ArrayList<String> gifPaths = new ArrayList<>(1);
+          gifPaths.add(result.getId());
+          mediaLayout.getFilesControllerDelegate().onGifFilesSelected(v, gifPaths);
         } else {
           mediaLayout.getFilesControllerDelegate().onFilesSelected(new ArrayList<>(Collections.singleton(result)), false);
         }
@@ -1303,7 +1327,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private void navigateTo (View view, InlineResultCommon result) {
     String path = result.getId();
     if (path != null) {
-      if (KEY_GALLERY.equals(path) || KEY_MUSIC.equals(path) || KEY_DOWNLOADS.equals(path) || KEY_BUCKET.equals(path) || path.startsWith(KEY_FOLDER)) {
+      if (KEY_GALLERY.equals(path) || KEY_MUSIC.equals(path) || KEY_DOWNLOADS.equals(path) || KEY_BUCKET.equals(path) || KEY_GIF_MODE.equals(path) || path.startsWith(KEY_FOLDER)) {
         navigateInside(view, path, result);
       } else if (KEY_UPPER.equals(path)) {
         navigateUpper();
@@ -1347,6 +1371,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private ArrayList<InlineResult<?>> selectedItems;
 
   private boolean inFileSelectMode;
+  // Set while browsing under the "Enviar como GIF" entry point, cleared on
+  // returning to the top-level menu or picking a different top-level entry.
+  // Left untouched while navigating into KEY_FOLDER subfolders, so it persists
+  // for as long as the person stays inside this browsing mode, however deep.
+  private boolean forceGifMode;
 
   private void setInFileSelectMode (boolean inFileSelectMode) {
     if (this.inFileSelectMode != inFileSelectMode) {
@@ -1471,6 +1500,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       return;
     }
 
+    if (forceGifMode && !files.isEmpty()) {
+      mediaLayout.getFilesControllerDelegate().onGifFilesSelected(view, files);
+      return;
+    }
+
     mediaLayout.sendFilesMixed(view, files, musicEntries, options, true);
   }
 
@@ -1549,6 +1583,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   public interface Delegate {
     boolean showRestriction (View view, @RightId int rightId);
     void onFilesSelected (ArrayList<InlineResult<?>> results, boolean needShowKeyboard);
+    void onGifFilesSelected (View view, ArrayList<String> paths);
   }
 }
 

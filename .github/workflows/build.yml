@@ -142,5 +142,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Tgx9-debug
+          name: Tgx9-release
           path: tgx/app/build/outputs/apk/**/*.apk
