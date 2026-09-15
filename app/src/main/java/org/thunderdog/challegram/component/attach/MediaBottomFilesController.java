@@ -302,10 +302,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       } else if (KEY_BUCKET.equals(currentPath)) {
         operation = buildBucket(data);
       } else if (KEY_GIF_MODE.equals(currentPath)) {
-        // Same browsing as "Diretório Raiz" - the person just wants to pick
-        // any .gif/.webm from anywhere; the only difference is what happens
-        // when they actually pick a file (see onClick() / onMultiSendPress()).
-        operation = buildFolder("/", parentPath);
+        // Open Downloads folder - most GIFs/webm are downloaded there.
+        // User can still navigate to other folders from here if needed.
+        operation = buildDownloads();
       } else if (currentPath.startsWith(KEY_FOLDER)) {
         String path = currentPath.substring(KEY_FOLDER.length());
         operation = buildFolder(path, parentPath);
