@@ -1583,7 +1583,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   public interface Delegate {
     boolean showRestriction (View view, @RightId int rightId);
     void onFilesSelected (ArrayList<InlineResult<?>> results, boolean needShowKeyboard);
-    void onGifFilesSelected (View view, ArrayList<String> paths);
+    // Default (not abstract): other Delegate implementations in the stock
+    // Telegram-X source (e.g. MediaToReplacePickerManager) that pre-date this
+    // "Enviar como GIF" feature don't implement it and shouldn't be forced to
+    // just to keep compiling.
+    default void onGifFilesSelected (View view, ArrayList<String> paths) { }
   }
 }
 
