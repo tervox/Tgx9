@@ -10633,44 +10633,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return metadata.durationSeconds > 0 && metadata.durationSeconds < 30 && knownSize > 0 && knownSize < 10L * 1024 * 1024;
   }
 
-  private VideoMetadata extractVideoMetadata (String path) {
-    int durationSeconds = 0;
-    int width = 1;
-    int height = 1;
-    try {
-      if (path == null || path.isEmpty()) {
-        return new VideoMetadata(width, height, durationSeconds);
-      }
-      android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
-      try {
-        if (path.startsWith("content://")) {
-          retriever.setDataSource(UI.getAppContext(), android.net.Uri.parse(path));
-        } else {
-          retriever.setDataSource(path);
-        }
-        String durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
-        if (durationStr != null) {
-          durationSeconds = (int) (Long.parseLong(durationStr) / 1000L);
-        }
-        String widthStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
-        if (widthStr != null) {
-          width = Integer.parseInt(widthStr);
-          if (width <= 0) width = 1;
-        }
-        String heightStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
-        if (heightStr != null) {
-          height = Integer.parseInt(heightStr);
-          if (height <= 0) height = 1;
-        }
-      } finally {
-        try { retriever.release(); } catch (Exception ignored) { }
-      }
-    } catch (Exception e) {
-      Log.e("TGX9", "Failed to extract video metadata: " + path, e);
-    }
-    return new VideoMetadata(width, height, durationSeconds);
-  }
-
   private static final class VideoMetadata {
     final int width, height, durationSeconds;
     VideoMetadata (int width, int height, int durationSeconds) {
