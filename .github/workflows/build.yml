@@ -67,6 +67,14 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Google removed the legacy "tools" SDK package on 2026-09-14; this
+          # action's own default (unset) packages input is "tools platform-tools",
+          # which now fails immediately with "Failed to find package 'tools'"
+          # before any of our own build steps run. We only ever needed
+          # platform-tools here - platforms/build-tools/NDK are installed
+          # explicitly further down by name.
+          packages: 'platform-tools'
 
       - name: Install NDK
         run: |
