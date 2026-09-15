@@ -59,59 +59,97 @@ jobs:
           python3 tgx9-mods/patch_video_fallback.py
           python3 tgx9-mods/patch_message_album.py
 
+
+
       - name: Cache Gradle packages
+
+
 
 
         uses: actions/cache@v4
 
 
+
+
         with:
+
+
 
 
           path: |
 
 
+
+
             ~/.gradle/caches
+
+
 
 
             ~/.gradle/wrapper
 
 
+
+
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
 
+
+
           restore-keys: |
+
+
 
 
             ${{ runner.os }}-gradle-
 
 
 
+
+
       - name: Cache native libraries
+
+
 
 
         uses: actions/cache@v4
 
 
+
+
         with:
+
+
 
 
           path: |
 
 
+
+
             tgx/app/jni/third_party
+
+
 
 
             tgx/app/build/intermediates/ndkBuild
 
 
+
+
           key: ${{ runner.os }}-native-${{ hashFiles('tgx9-mods/build_native.sh', 'tgx/app/jni/**/CMakeLists.txt') }}
+
+
 
 
           restore-keys: |
 
 
+
+
             ${{ runner.os }}-native-
+
+
 
 
 
