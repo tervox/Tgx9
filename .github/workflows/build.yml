@@ -233,10 +233,10 @@ jobs:
         run: |
           cd tgx
           echo "org.gradle.caching=true" >> gradle.properties
-      echo "org.gradle.parallel=true" >> gradle.properties
-      echo "org.gradle.configureondemand=true" >> gradle.properties
-      echo "org.gradle.daemon=true" >> gradle.properties
-      ./gradlew assembleLegacyArm32Release --stacktrace --build-cache
+          echo "org.gradle.parallel=true" >> gradle.properties
+          echo "org.gradle.configureondemand=true" >> gradle.properties
+          echo "org.gradle.daemon=true" >> gradle.properties
+          ./gradlew assembleLegacyArm32Release --stacktrace --build-cache
 
       - name: Sign APK
         run: |
