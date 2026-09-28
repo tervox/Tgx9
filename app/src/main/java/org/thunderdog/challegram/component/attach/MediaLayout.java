@@ -2019,6 +2019,14 @@ public class MediaLayout extends FrameLayoutFix implements
             target.sendFilesAsGif(view, paths, Td.newSendOptions());
           }
         }
+
+        @Override
+        public void onImageFilesSelected (View view, ArrayList<String> paths) {
+          if (target != null && target.isFocused()) {
+            hide(false);
+            target.sendFilesAsPhotos(view, paths, Td.newSendOptions());
+          }
+        }
       };
     }
 

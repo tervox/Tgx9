@@ -1243,8 +1243,22 @@ public class U {
           }
         } else if (isDownloadsDocument(uri)) {
           final String id = DocumentsContract.getDocumentId(uri);
-          final Uri contentUri = ContentUris.withAppendedId(Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
-          result = getDataColumn(UI.getContext(), contentUri, null, null);
+          if (id != null && id.startsWith("raw:")) {
+            // Android 10+ frequently hands back the real path directly instead
+            // of a numeric row id (e.g. "raw:/storage/emulated/0/Download/x.pdf").
+            result = id.substring("raw:".length());
+          } else {
+            try {
+              final Uri contentUri = ContentUris.withAppendedId(Uri.parse("content://downloads/public_downloads"), Long.parseLong(id));
+              result = getDataColumn(UI.getContext(), contentUri, null, null);
+            } catch (NumberFormatException e) {
+              // Non-numeric id we don't otherwise recognize (seen as "msf:N" on
+              // some OEM builds); fall through to the content:// fallback in
+              // showSystemPicker()/tryResolveFilePath() callers instead of
+              // silently producing no path at all.
+              result = null;
+            }
+          }
         } else if (isMediaDocument(uri)) {
           final String docId = DocumentsContract.getDocumentId(uri);
           final String[] split = docId.split(":", 2);

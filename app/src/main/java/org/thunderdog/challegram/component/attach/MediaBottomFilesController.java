@@ -27,6 +27,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Looper;
 import android.os.StatFs;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -182,6 +183,17 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       .setType("*/*")
       .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
       .putExtra("android.content.extra.SHOW_ADVANCED", true);
+    // TGX9: both "Internal storage" and "Downloads" entries open the picker at the
+    // root of internal storage (the user can still navigate into Download from
+    // there). EXTRA_INITIAL_URI is API 26+ and only a hint for the primary volume.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      try {
+        Uri initialUri = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:");
+        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
+      } catch (Throwable t) {
+        Log.w("Cannot set initial picker URI", t);
+      }
+    }
     context.putActivityResultHandler(Intents.ACTIVITY_RESULT_FILES, (requestCode, resultCode, data) -> {
       if (resultCode == Activity.RESULT_OK) {
         // Use a LinkedHashSet to maintain any ordering that may be
@@ -225,6 +237,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private static final String KEY_FILE = "file://";
   private static final String KEY_UPPER = "..";
   private static final String KEY_GIF_MODE = "gif_mode";
+  private static final String KEY_IMAGE_MODE = "image_mode";
 
     private int initialItemsCount;
 
@@ -278,8 +291,13 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     if (currentPath == null || currentPath.isEmpty()
       || KEY_GALLERY.equals(currentPath) || KEY_MUSIC.equals(currentPath) || KEY_DOWNLOADS.equals(currentPath)) {
       forceGifMode = false;
+      forceImageMode = false;
     } else if (KEY_GIF_MODE.equals(currentPath)) {
       forceGifMode = true;
+      forceImageMode = false;
+    } else if (KEY_IMAGE_MODE.equals(currentPath)) {
+      forceImageMode = true;
+      forceGifMode = false;
     }
 
     ArrayList<ListItem> items = new ArrayList<>();
@@ -301,7 +319,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
         operation = buildDownloads();
       } else if (KEY_BUCKET.equals(currentPath)) {
         operation = buildBucket(data);
-      } else if (KEY_GIF_MODE.equals(currentPath)) {
+      } else if (KEY_GIF_MODE.equals(currentPath) || KEY_IMAGE_MODE.equals(currentPath)) {
         // Open external storage root (accessible) instead of "/" (restricted)
         String storagePath = Environment.getExternalStorageDirectory().getPath();
         operation = buildFolder(storagePath, parentPath);
@@ -365,6 +383,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
 
     InlineResultCommon gifModeItem = createItem(context, tdlib, KEY_GIF_MODE, R.drawable.deproko_baseline_gif_filled_24, "Enviar como GIF", "Enviar .gif/.webm sem compressão, como GIF");
     items.add(createItem(gifModeItem, R.id.btn_folder));
+
+    InlineResultCommon imageModeItem = createItem(context, tdlib, KEY_IMAGE_MODE, R.drawable.baseline_image_24, "Enviar como imagem", "Enviar fotos como imagem, sem compressão (qualidade original)");
+    items.add(createItem(imageModeItem, R.id.btn_folder));
 
     boolean addedDownloads = false;
     boolean downloadsEmpty = false;
@@ -1260,6 +1281,10 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
           ArrayList<String> gifPaths = new ArrayList<>(1);
           gifPaths.add(result.getId());
           mediaLayout.getFilesControllerDelegate().onGifFilesSelected(v, gifPaths);
+        } else if (forceImageMode && itemId == R.id.btn_file) {
+          ArrayList<String> imagePaths = new ArrayList<>(1);
+          imagePaths.add(result.getId());
+          mediaLayout.getFilesControllerDelegate().onImageFilesSelected(v, imagePaths);
         } else {
           mediaLayout.getFilesControllerDelegate().onFilesSelected(new ArrayList<>(Collections.singleton(result)), false);
         }
@@ -1326,7 +1351,7 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   private void navigateTo (View view, InlineResultCommon result) {
     String path = result.getId();
     if (path != null) {
-      if (KEY_GALLERY.equals(path) || KEY_MUSIC.equals(path) || KEY_DOWNLOADS.equals(path) || KEY_BUCKET.equals(path) || KEY_GIF_MODE.equals(path) || path.startsWith(KEY_FOLDER)) {
+      if (KEY_GALLERY.equals(path) || KEY_MUSIC.equals(path) || KEY_DOWNLOADS.equals(path) || KEY_BUCKET.equals(path) || KEY_GIF_MODE.equals(path) || KEY_IMAGE_MODE.equals(path) || path.startsWith(KEY_FOLDER)) {
         navigateInside(view, path, result);
       } else if (KEY_UPPER.equals(path)) {
         navigateUpper();
@@ -1375,6 +1400,9 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
   // Left untouched while navigating into KEY_FOLDER subfolders, so it persists
   // for as long as the person stays inside this browsing mode, however deep.
   private boolean forceGifMode;
+
+  // Same idea as forceGifMode, for the "Enviar como imagem" entry point.
+  private boolean forceImageMode;
 
   private void setInFileSelectMode (boolean inFileSelectMode) {
     if (this.inFileSelectMode != inFileSelectMode) {
@@ -1504,6 +1532,11 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
       return;
     }
 
+    if (forceImageMode && !files.isEmpty()) {
+      mediaLayout.getFilesControllerDelegate().onImageFilesSelected(view, files);
+      return;
+    }
+
     mediaLayout.sendFilesMixed(view, files, musicEntries, options, true);
   }
 
@@ -1587,6 +1620,8 @@ public class MediaBottomFilesController extends MediaBottomBaseController<Void> 
     // "Enviar como GIF" feature don't implement it and shouldn't be forced to
     // just to keep compiling.
     default void onGifFilesSelected (View view, ArrayList<String> paths) { }
+    // Default for the same reason as onGifFilesSelected.
+    default void onImageFilesSelected (View view, ArrayList<String> paths) { }
   }
 }
 

@@ -9888,7 +9888,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
             int retryIndex = Math.min(sentFunctionsCount[0], Math.max(0, expectedCount - 1));
             boolean retryable = error.code == 429 || (error.code == 400 && error.message != null &&
               (error.message.contains("Wrong file identifier") || error.message.contains("wrong file identifier") ||
-               error.message.contains("FILE_ID_INVALID") || error.message.contains("MEDIA_INVALID")));
+               error.message.contains("FILE_ID_INVALID") || error.message.contains("MEDIA_INVALID") ||
+               error.message.contains("Group send failed")));
             int retry = retryIndex < retryCounts.length ? retryCounts[retryIndex]++ : 5;
             if (retryable && retry < 4) {
               int delaySeconds = 2;
@@ -10320,6 +10321,92 @@ public class MessagesController extends ViewController<MessagesController.Argume
     });
   }
 
+  /**
+   * "Enviar como imagem": sends the picked files as inline photos instead of
+   * documents, without the client-side downscale/recompress step.
+   *
+   * - JPEG up to 10 MB with sane dimensions is sent byte-for-byte (original).
+   * - Other decodable formats (PNG, WebP, HEIC...) go through the stock photo
+   *   generator, which converts to JPEG at high resolution (near original).
+   * - Anything Telegram would refuse as a photo (not an image, over 10 MB,
+   *   width+height over 10000, aspect ratio over 20) is sent as a document
+   *   instead of being dropped, so no file is ever lost by picking this mode.
+   */
+  public void sendFilesAsPhotos (View view, final List<String> paths, TdApi.MessageSendOptions initialSendOptions) {
+    if (paths == null || paths.isEmpty()) {
+      return;
+    }
+    if (showSlowModeRestriction(view, initialSendOptions)) {
+      return;
+    }
+
+    final long chatId = chat.id;
+    final boolean isSecretChat = isSecretChat();
+    ReplyInfo replyInfo = obtainReplyTo();
+    TdApi.InputMessageReplyTo replyTo = replyInfo != null ? replyInfo.toInputMessageReply() : null;
+    TdApi.MessageTopic topicId = getMessageTopicId(replyInfo);
+    final TdApi.MessageSendOptions finalSendOptions = Td.newSendOptions(
+      initialSendOptions,
+      getInputSuggestedPostInfo(replyInfo),
+      obtainSilentMode()
+    );
+
+    Media.instance().post(() -> {
+      final long preparationStartedAt = SystemClock.uptimeMillis();
+      final int count = paths.size();
+      List<TdApi.InputMessageContent> photos = new ArrayList<>(count);
+      List<TdApi.InputMessageContent> documents = new ArrayList<>();
+      for (int a = 0; a < count; a++) {
+        final String path = paths.get(a);
+        boolean sentAsPhoto = false;
+        try {
+          File file = new File(path);
+          BitmapFactory.Options opts = ImageReader.getImageSize(path);
+          int w = opts != null ? opts.outWidth : 0;
+          int h = opts != null ? opts.outHeight : 0;
+          if (w > 0 && h > 0 && file.length() > 0) {
+            int orientation = U.getExifOrientation(path);
+            boolean rotated = U.isExifRotated(orientation);
+            int width = rotated ? h : w;
+            int height = rotated ? w : h;
+            boolean withinLimits = (width + height) <= 10000
+              && Math.max(width, height) <= 20L * Math.min(width, height);
+            boolean isJpeg = opts.outMimeType != null && opts.outMimeType.equalsIgnoreCase("image/jpeg");
+            if (withinLimits) {
+              TdApi.InputFile inputFile;
+              if (isJpeg && file.length() <= 10L * 1024L * 1024L) {
+                inputFile = TD.createInputFile(path);
+              } else {
+                inputFile = PhotoGenerationInfo.newFile(path, U.getRotationForExifOrientation(orientation));
+              }
+              photos.add(tdlib.filegen().createThumbnail(new TdApi.InputMessagePhoto(inputFile, null, null, width, height, null, false, null, false), isSecretChat));
+              sentAsPhoto = true;
+            }
+          }
+        } catch (Throwable t) {
+          Log.w("Cannot prepare photo, sending as document: " + path, t);
+        }
+        if (!sentAsPhoto) {
+          documents.add(tdlib.filegen().createThumbnail(new TdApi.InputMessageDocument(TD.createInputFile(path), null, false, null), isSecretChat));
+        }
+      }
+      List<TdApi.Function<?>> functions = new ArrayList<>();
+      // Albums cannot mix photos and documents, so build them separately.
+      if (!photos.isEmpty()) {
+        functions.addAll(TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, photos.toArray(new TdApi.InputMessageContent[0]), true));
+      }
+      if (!documents.isEmpty()) {
+        functions.addAll(TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, documents.toArray(new TdApi.InputMessageContent[0]), false));
+      }
+      Tgx9Diag.log("TGX9_SEND_AS_PHOTO: count=%d photos=%d docs=%d prepMs=%d functions=%d", count, photos.size(), documents.size(), SystemClock.uptimeMillis() - preparationStartedAt, functions.size());
+      int uploadCount = UploadNotificationManager.countUploadItems(functions);
+      if (uploadCount > 0) {
+        UploadNotificationManager.instance().beginBatch(uploadCount, tdlib);
+      }
+      dispatchUploadFunctionsSequential(functions);
+    });
+  }
+
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
     sendFiles(view, paths, needGroupMedia, allowReply, lastFileCaption, initialSendOptions, functions -> {
       if (functions == null) {
@@ -10344,10 +10431,27 @@ public class MessagesController extends ViewController<MessagesController.Argume
    * other 9, which is what reusing executeSendMessageFunctions() here would do
    * (it stops the whole chain on the first unretryable error).
    */
+  // TGX9: queue of batches waiting for the current one to fully finish. Firing
+  // several SendMessageAlbum/SendMessage batches at the same time (e.g. the
+  // gallery picker's send button being reachable again before the previous
+  // selection finished dispatching, or GIF-mode and a normal batch overlapping)
+  // is what makes the server return "#400: Group send failed" followed by a
+  // real flood-wait - Telegram's API returns that specific error when it sees
+  // several concurrent group-send requests from the same client. Keeping only
+  // one batch in flight at a time removes that trigger entirely.
+  private final java.util.ArrayDeque<List<TdApi.Function<?>>> pendingUploadBatches = new java.util.ArrayDeque<>();
+  private boolean uploadBatchInFlight;
+
   private void dispatchUploadFunctionsSequential (List<TdApi.Function<?>> functions) {
     if (functions == null || functions.isEmpty()) {
       return;
     }
+    if (uploadBatchInFlight) {
+      Tgx9Diag.log("TGX9_DISPATCH_QUEUE: another batch is in flight, queuing %d function(s) (queue size now %d)", functions.size(), pendingUploadBatches.size() + 1);
+      pendingUploadBatches.add(functions);
+      return;
+    }
+    uploadBatchInFlight = true;
     final int total = functions.size();
     final int[] retryCounts = new int[total];
     final Tdlib tdlibRef = tdlib;
@@ -10356,6 +10460,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private void dispatchUploadFunctionAt (List<TdApi.Function<?>> functions, int index, int[] retryCounts, Tdlib tdlibRef) {
     if (index >= functions.size()) {
+      uploadBatchInFlight = false;
+      List<TdApi.Function<?>> next = pendingUploadBatches.poll();
+      if (next != null) {
+        dispatchUploadFunctionsSequential(next);
+      }
       return;
     }
     tdlibRef.client().send(functions.get(index), result -> {
@@ -10363,7 +10472,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
         TdApi.Error error = (TdApi.Error) result;
         boolean retryable = error.code == 429 || (error.code == 400 && error.message != null &&
           (error.message.contains("Wrong file identifier") || error.message.contains("wrong file identifier") ||
-           error.message.contains("FILE_ID_INVALID") || error.message.contains("MEDIA_INVALID")));
+           error.message.contains("FILE_ID_INVALID") || error.message.contains("MEDIA_INVALID") ||
+           error.message.contains("Group send failed")));
         int retry = retryCounts[index]++;
         if (retryable && retry < 4) {
           int delaySeconds = 2;
